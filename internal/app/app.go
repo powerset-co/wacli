@@ -89,10 +89,12 @@ type Options struct {
 }
 
 type App struct {
-	opts Options
-	waMu sync.Mutex
-	wa   WAClient
-	db   *store.DB
+	opts     Options
+	waMu     sync.Mutex
+	wa       WAClient
+	db       *store.DB
+	statusMu sync.Mutex
+	status   *syncStatus
 }
 
 func New(opts Options) (*App, error) {

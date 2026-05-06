@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1 - Unreleased
+
+### Changed
+
+- Sync: collapse routine interactive TTY progress into a single updating status line while keeping warnings visible as normal stderr lines.
+
 ## 0.8.0 - 2026-05-07
 
 ### Added

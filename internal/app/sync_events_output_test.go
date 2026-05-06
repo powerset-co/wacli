@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -63,5 +64,85 @@ func TestSyncEventsOutputStaysNDJSONDuringProgress(t *testing.T) {
 	}
 	if !sawProgress {
 		t.Fatalf("expected progress event in:\n%s", raw)
+	}
+}
+
+func TestSyncTTYProgressUsesSingleStatusLine(t *testing.T) {
+	oldTerminal := syncStatusTerminal
+	syncStatusTerminal = func() bool { return true }
+	t.Cleanup(func() { syncStatusTerminal = oldTerminal })
+
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+
+	chat := types.JID{User: "123", Server: types.DefaultUserServer}
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	ids := make([]string, 30)
+	for i := range ids {
+		ids[i] = "m" + string(rune('a'+i))
+	}
+	f.connectEvents = []interface{}{historySyncWithTextMessages(chat, base, ids...)}
+
+	raw := captureStderr(t, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, err := a.Sync(ctx, SyncOptions{
+			Mode:         SyncModeOnce,
+			AllowQR:      false,
+			IdleExit:     time.Millisecond,
+			WarnNoLimits: false,
+		})
+		if err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+	})
+
+	if strings.Contains(raw, "\nProcessing history sync") || strings.Contains(raw, "\nSynced 25 messages") {
+		t.Fatalf("TTY progress should update one status line, got:\n%q", raw)
+	}
+	if !strings.Contains(raw, "\rConnected. Waiting for history sync...") {
+		t.Fatalf("missing connected status in:\n%q", raw)
+	}
+	if !strings.Contains(raw, "\rSyncing history: 1 conversations, 25 messages stored") {
+		t.Fatalf("missing history progress status in:\n%q", raw)
+	}
+	if !strings.Contains(raw, "\rSyncing history: 1 conversations, 30 messages stored") {
+		t.Fatalf("missing final history status in:\n%q", raw)
+	}
+}
+
+func TestSyncTTYWarningBreaksThroughStatusLine(t *testing.T) {
+	oldTerminal := syncStatusTerminal
+	syncStatusTerminal = func() bool { return true }
+	t.Cleanup(func() { syncStatusTerminal = oldTerminal })
+
+	a := newTestApp(t)
+	f := newFakeWA()
+	f.appStateFetchErr = errors.New("not connected")
+	a.wa = f
+
+	raw := captureStderr(t, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, err := a.Sync(ctx, SyncOptions{
+			Mode:         SyncModeOnce,
+			AllowQR:      false,
+			IdleExit:     time.Millisecond,
+			WarnNoLimits: false,
+		})
+		if err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+	})
+
+	if !strings.Contains(raw, "warning: failed to sync WhatsApp app state regular_high: not connected\n") {
+		t.Fatalf("missing regular_high warning in:\n%q", raw)
+	}
+	if !strings.Contains(raw, "warning: failed to sync WhatsApp app state regular_low: not connected\n") {
+		t.Fatalf("missing regular_low warning in:\n%q", raw)
+	}
+	if strings.Contains(raw, "\nConnected.\n") {
+		t.Fatalf("connected status should not become a separate noisy line:\n%q", raw)
 	}
 }

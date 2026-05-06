@@ -246,7 +246,7 @@ func (a *App) handleHistorySync(ctx context.Context, opts SyncOptions, v *events
 		}
 	}
 	if !a.eventsEnabled() {
-		fmt.Fprintf(os.Stderr, "\rSynced %d messages...", messagesStored.Load())
+		a.emitOrPrint("progress", map[string]any{"messages_synced": messagesStored.Load()}, "\rSynced %d messages...", messagesStored.Load())
 	}
 }
 

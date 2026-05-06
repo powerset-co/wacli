@@ -21,6 +21,21 @@ func (a *App) emitOrPrint(event string, data map[string]any, format string, args
 		a.emitEvent(event, data)
 		return
 	}
+	if st := a.currentSyncStatus(); st != nil {
+		switch event {
+		case "connected":
+			st.Connected()
+		case "history_sync":
+			conversations, _ := data["conversations"].(int)
+			st.HistorySync(conversations)
+		case "progress":
+			messages, _ := data["messages_synced"].(int64)
+			st.Progress(messages)
+		default:
+			st.PrintLine(fmt.Sprintf(format, args...))
+		}
+		return
+	}
 	fmt.Fprintf(os.Stderr, format, args...)
 }
 
@@ -32,6 +47,10 @@ func (a *App) emitWarning(code, message string, data map[string]any) {
 		data["code"] = code
 		data["message"] = message
 		a.emitEvent("warning", data)
+		return
+	}
+	if st := a.currentSyncStatus(); st != nil {
+		st.WarnLine(message)
 		return
 	}
 	fmt.Fprintln(os.Stderr, message)

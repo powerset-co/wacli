@@ -52,6 +52,9 @@ type SyncResult struct {
 }
 
 func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
+	status := a.beginSyncStatus()
+	defer a.endSyncStatus(status)
+
 	if opts.Mode == "" {
 		opts.Mode = SyncModeFollow
 	}
