@@ -82,6 +82,12 @@ body:not(.home) .doc>h1:first-child{display:none}
 .doc pre::-webkit-scrollbar{height:8px;width:8px}
 .doc pre::-webkit-scrollbar-thumb{background:var(--code-scroll);border-radius:8px}
 .doc pre code{display:block;background:transparent;border:0;color:inherit;padding:0;font-size:1em;white-space:pre}
+.doc pre .hl-c{color:#7f9990;font-style:italic}
+.doc pre .hl-s{color:#a6e3a1}
+.doc pre .hl-v{color:#f9c779}
+.doc pre .hl-f{color:#89c2d9}
+.doc pre .hl-n{color:#f4a47a}
+.doc pre .hl-k{color:#cba6f7}
 .copy{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:34px;height:34px;background:rgba(255,255,255,.06);color:var(--code-fg);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:0;cursor:pointer;transition:background .15s,border-color .15s,color .15s,opacity .15s}
 .copy:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3)}
 .copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

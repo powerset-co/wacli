@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { highlight } from "./docs-site-highlight.mjs";
+
 export function markdownToHtml(markdown, currentRel, rewriteHref) {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const html = [];
@@ -34,7 +36,7 @@ export function markdownToHtml(markdown, currentRel, rewriteHref) {
       closeList();
       flushBlockquote();
       if (fence) {
-        html.push(`<pre><code class="language-${escapeAttr(fence.lang)}">${escapeHtml(fence.lines.join("\n"))}</code></pre>`);
+        html.push(`<pre><code class="language-${escapeAttr(fence.lang)}">${highlight(fence.lang, fence.lines.join("\n"))}</code></pre>`);
         fence = null;
       } else {
         fence = { lang: fenceMatch[1] || "text", lines: [] };
