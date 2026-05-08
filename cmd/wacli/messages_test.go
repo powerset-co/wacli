@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/openclaw/wacli/internal/store"
 	"github.com/spf13/cobra"
-	"github.com/steipete/wacli/internal/store"
 	"go.mau.fi/whatsmeow/types"
 )
 
