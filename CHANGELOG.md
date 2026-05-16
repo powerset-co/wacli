@@ -2,6 +2,10 @@
 
 ## 0.9.2 - Unreleased
 
+### Fixed
+
+- Sync: canonicalize `@lid` chat JIDs before enqueuing media downloads so `sync --follow --download-media` finds the correct DB row for live one-to-one messages. (#244 - thanks @Daniel1of1)
+
 ## 0.9.1 - 2026-05-15
 
 ### Added
