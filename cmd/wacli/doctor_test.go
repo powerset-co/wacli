@@ -2,10 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/openclaw/wacli/internal/lock"
 	"github.com/openclaw/wacli/internal/store"
 )
 
@@ -106,5 +110,73 @@ func TestWriteDoctorReportIncludesLinkedJIDAndStats(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("doctor output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestDoctorReadOnlyDoesNotCreateStoreFiles(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "store")
+	stdout := captureRootStdout(t, func() {
+		if err := execute([]string{"--store", storeDir, "--read-only", "doctor"}); err != nil {
+			t.Fatalf("execute doctor: %v", err)
+		}
+	})
+	if !strings.Contains(stdout, "STORE") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	for _, name := range []string{"wacli.db", "session.db", "LOCK"} {
+		if _, err := os.Stat(filepath.Join(storeDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s stat error = %v, want not exist", name, err)
+		}
+	}
+}
+
+func TestDoctorReadOnlyIgnoresStaleLockText(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "store")
+	lk, err := lock.Acquire(storeDir)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := lk.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+
+	stdout := captureRootStdout(t, func() {
+		if err := execute([]string{"--store", storeDir, "--read-only", "--json", "doctor"}); err != nil {
+			t.Fatalf("execute doctor: %v", err)
+		}
+	})
+	var got struct {
+		Data doctorReport `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	if got.Data.LockHeld {
+		t.Fatalf("lock_held = true for stale lock text")
+	}
+}
+
+func TestDoctorReadOnlyReportsCorruptStore(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "store")
+	if err := os.MkdirAll(storeDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "wacli.db"), []byte("not sqlite"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	stdout := captureRootStdout(t, func() {
+		if err := execute([]string{"--store", storeDir, "--read-only", "--json", "doctor"}); err != nil {
+			t.Fatalf("execute doctor: %v", err)
+		}
+	})
+	var got struct {
+		Data doctorReport `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, stdout)
+	}
+	if got.Data.StoreError == "" {
+		t.Fatalf("store_error is empty for corrupt store: %s", stdout)
 	}
 }

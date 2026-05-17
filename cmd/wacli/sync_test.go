@@ -7,7 +7,7 @@ import (
 
 func TestSyncCommandExposesWebhookFlags(t *testing.T) {
 	cmd := newSyncCmd(&rootFlags{})
-	for _, name := range []string{"webhook", "webhook-secret"} {
+	for _, name := range []string{"webhook", "webhook-secret", "webhook-allow-private"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Fatalf("missing --%s flag", name)
 		}

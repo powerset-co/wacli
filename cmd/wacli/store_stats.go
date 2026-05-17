@@ -25,17 +25,17 @@ func newStoreStatsCmd(flags *rootFlags) *cobra.Command {
 
 			_ = ctx
 
-			chats, err := a.DB().ListChats("", 0)
+			chats, err := a.DB().CountChats()
 			if err != nil {
 				return err
 			}
 
-			groups, err := a.DB().ListGroups("", 0)
+			groups, err := a.DB().CountGroups()
 			if err != nil {
 				return err
 			}
 
-			leftGroups, err := a.DB().ListLeftGroups()
+			leftGroups, err := a.DB().CountLeftGroups()
 			if err != nil {
 				return err
 			}
@@ -46,9 +46,9 @@ func newStoreStatsCmd(flags *rootFlags) *cobra.Command {
 			}
 
 			stats := map[string]any{
-				"chats":       len(chats),
-				"groups":      len(groups),
-				"left_groups": len(leftGroups),
+				"chats":       chats,
+				"groups":      groups,
+				"left_groups": leftGroups,
 				"messages":    totalMessages,
 			}
 
@@ -57,9 +57,9 @@ func newStoreStatsCmd(flags *rootFlags) *cobra.Command {
 			}
 
 			fmt.Fprintf(os.Stdout, "Store Statistics:\n")
-			fmt.Fprintf(os.Stdout, "  Chats:       %d\n", len(chats))
-			fmt.Fprintf(os.Stdout, "  Groups:      %d\n", len(groups))
-			fmt.Fprintf(os.Stdout, "  Left Groups: %d\n", len(leftGroups))
+			fmt.Fprintf(os.Stdout, "  Chats:       %d\n", chats)
+			fmt.Fprintf(os.Stdout, "  Groups:      %d\n", groups)
+			fmt.Fprintf(os.Stdout, "  Left Groups: %d\n", leftGroups)
 			fmt.Fprintf(os.Stdout, "  Messages:    %d\n", totalMessages)
 			return nil
 		},

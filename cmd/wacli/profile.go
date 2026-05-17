@@ -17,6 +17,8 @@ import (
 
 // profileMaxPx is the max dimension WhatsApp accepts for profile pictures.
 const profileMaxPx = 640
+const profileMaxInputBytes = 20 * 1024 * 1024
+const profileMaxInputPixels = 40_000_000
 
 func newProfileCmd(flags *rootFlags) *cobra.Command {
 	cmd := &cobra.Command{
@@ -76,9 +78,16 @@ func newProfileSetPictureCmd(flags *rootFlags) *cobra.Command {
 // readAsJPEG reads the file at path, decodes it, resizes to <=profileMaxPx if
 // needed, and returns JPEG-encoded bytes suitable for WhatsApp.
 func readAsJPEG(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
+	data, err := readRegularFileLimited(path, profileMaxInputBytes)
 	if err != nil {
 		return nil, err
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("unsupported image format: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > profileMaxInputPixels/cfg.Height {
+		return nil, fmt.Errorf("image dimensions are too large")
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(data))

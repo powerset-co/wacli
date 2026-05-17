@@ -171,6 +171,29 @@ func (d *DB) MarkMessageDeletedForMe(chatJID, msgID, senderJID string, fromMe bo
 	})
 }
 
+func (d *DB) MarkMessageDeletedForMePreserveMedia(chatJID, msgID string) error {
+	chatJID = strings.TrimSpace(chatJID)
+	msgID = strings.TrimSpace(msgID)
+	if chatJID == "" {
+		return fmt.Errorf("chat JID is required")
+	}
+	if msgID == "" {
+		return fmt.Errorf("message ID is required")
+	}
+	n, err := d.q.MarkMessageDeletedForMePreserveMedia(storeCtx(), storedb.MarkMessageDeletedForMePreserveMediaParams{
+		DisplayText: sql.NullString{String: DeletedForMeMessageDisplayText, Valid: true},
+		ChatJid:     chatJID,
+		MsgID:       msgID,
+	})
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (d *DB) UpdateMessageText(chatJID, msgID, text string) error {
 	n, err := d.q.UpdateMessageText(storeCtx(), storedb.UpdateMessageTextParams{
 		Text:        nullString(text),

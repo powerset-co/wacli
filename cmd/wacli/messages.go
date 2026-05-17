@@ -526,6 +526,13 @@ func newMessagesDeleteCmd(flags *rootFlags) *cobra.Command {
 				}); err != nil {
 					return err
 				}
+				deletedLocalMedia, deleteMediaErr := deleteLocalMediaIfRequested(deleteMedia, msg.LocalPath)
+				if deleteMediaErr != nil {
+					if err := a.DB().MarkMessageDeletedForMePreserveMedia(msg.ChatJID, msg.MsgID); err != nil {
+						return fmt.Errorf("store deleted-for-me message state: %w", err)
+					}
+					return fmt.Errorf("delete local media: %w", deleteMediaErr)
+				}
 				if err := a.DB().MarkMessageDeletedForMe(msg.ChatJID, msg.MsgID, msg.SenderJID, msg.FromMe, time.Now().UTC()); err != nil {
 					return fmt.Errorf("store deleted-for-me message state: %w", err)
 				}
@@ -537,6 +544,7 @@ func newMessagesDeleteCmd(flags *rootFlags) *cobra.Command {
 						"deleted_for_me": true,
 						"to":             chatJID.String(),
 						"target":         msg.MsgID,
+						"deleted_media":  deletedLocalMedia,
 					})
 				}
 				fmt.Fprintf(os.Stdout, "Deleted message %s for me in %s\n", msg.MsgID, chatJID.String())
@@ -662,6 +670,19 @@ func loadMessageMutationTarget(ctx context.Context, a *app.App, chat, id string)
 		return store.Message{}, types.JID{}, fmt.Errorf("stored chat JID is invalid: %w", err)
 	}
 	return msg, chatJID, nil
+}
+
+func deleteLocalMediaIfRequested(deleteMedia bool, localPath string) (bool, error) {
+	if !deleteMedia || strings.TrimSpace(localPath) == "" {
+		return false, nil
+	}
+	if err := os.Remove(localPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func validateMessageCanRevoke(msg store.Message) error {

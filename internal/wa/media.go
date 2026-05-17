@@ -3,6 +3,7 @@ package wa
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,10 @@ import (
 )
 
 const MaxMediaDownloadSize = 100 * 1024 * 1024
+
+// WhatsApp writes encrypted media as padded ciphertext plus a 10-byte MAC before
+// truncating and decrypting it in place.
+const maxEncryptedMediaDownloadOverhead = 16 + 10
 
 func MediaTypeFromString(mediaType string) (whatsmeow.MediaType, error) {
 	switch strings.ToLower(strings.TrimSpace(mediaType)) {
@@ -67,8 +72,16 @@ func (c *Client) DownloadMediaToFile(ctx context.Context, directPath string, enc
 		return 0, err
 	}
 
-	if err := cli.DownloadMediaWithPathToFile(ctx, directPath, encFileHash, fileHash, mediaKey, length, mt, mmsType, tmpFile); err != nil {
+	limitedFile := &limitedDownloadFile{File: tmpFile, max: MaxMediaDownloadSize + maxEncryptedMediaDownloadOverhead, userMax: MaxMediaDownloadSize}
+	if err := cli.DownloadMediaWithPathToFile(ctx, directPath, encFileHash, fileHash, mediaKey, length, mt, mmsType, limitedFile); err != nil {
 		return 0, err
+	}
+	info, err := tmpFile.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("stat temp media file: %w", err)
+	}
+	if info.Size() > MaxMediaDownloadSize {
+		return 0, fmt.Errorf("media too large; maximum download size is %d bytes", MaxMediaDownloadSize)
 	}
 	if err := tmpFile.Sync(); err != nil {
 		return 0, fmt.Errorf("flush temp file: %w", err)
@@ -81,11 +94,92 @@ func (c *Client) DownloadMediaToFile(ctx context.Context, directPath string, enc
 	}
 	success = true
 
-	info, err := os.Stat(targetPath)
+	info, err = os.Stat(targetPath)
 	if err != nil {
 		return 0, fmt.Errorf("stat output file: %w", err)
 	}
 	return info.Size(), nil
+}
+
+type limitedDownloadFile struct {
+	*os.File
+	max     int64
+	userMax int64
+	written int64
+}
+
+func (f *limitedDownloadFile) Write(p []byte) (int, error) {
+	off, err := f.File.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	if off+int64(len(p)) > f.max {
+		return 0, f.limitError()
+	}
+	n, err := f.File.Write(p)
+	f.noteWritten(off + int64(n))
+	return n, err
+}
+
+func (f *limitedDownloadFile) WriteAt(p []byte, off int64) (int, error) {
+	if off+int64(len(p)) > f.max {
+		return 0, f.limitError()
+	}
+	n, err := f.File.WriteAt(p, off)
+	f.noteWritten(off + int64(n))
+	return n, err
+}
+
+func (f *limitedDownloadFile) ReadFrom(r io.Reader) (int64, error) {
+	off, err := f.File.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	remaining := f.max - off
+	if remaining < 0 {
+		remaining = 0
+	}
+	n, err := io.Copy(f.File, io.LimitReader(r, remaining))
+	f.noteWritten(off + n)
+	if err != nil {
+		return n, err
+	}
+	var probe [1]byte
+	extra, err := r.Read(probe[:])
+	if extra > 0 {
+		return n, f.limitError()
+	}
+	if err != nil && err != io.EOF {
+		return n, err
+	}
+	return n, nil
+}
+
+func (f *limitedDownloadFile) Truncate(size int64) error {
+	if size > f.max {
+		return f.limitError()
+	}
+	if err := f.File.Truncate(size); err != nil {
+		return err
+	}
+	if f.written > size {
+		f.written = size
+	}
+	return nil
+}
+
+func (f *limitedDownloadFile) limitError() error {
+	max := f.userMax
+	if max <= 0 {
+		max = f.max
+	}
+	return fmt.Errorf("media too large; maximum download size is %d bytes", max)
+}
+
+func (f *limitedDownloadFile) noteWritten(end int64) {
+	if end > f.written {
+		f.written = end
+	}
 }
 
 func mediaDownloadLength(fileLength uint64) (int, error) {

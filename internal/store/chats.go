@@ -34,6 +34,10 @@ func (d *DB) ListChats(query string, limit int) ([]Chat, error) {
 	return d.ListChatsFiltered(ChatListFilter{Query: query, Limit: limit})
 }
 
+func (d *DB) CountChats() (int64, error) {
+	return d.q.CountChats(storeCtx())
+}
+
 func (d *DB) ListChatsFiltered(f ChatListFilter) ([]Chat, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50

@@ -973,6 +973,48 @@ func TestMessageButtonsClearedOnDeletedForMe(t *testing.T) {
 	}
 }
 
+func TestMarkMessageDeletedForMePreserveMediaKeepsLocalPath(t *testing.T) {
+	db := openTestDB(t)
+
+	chat := "biz@s.whatsapp.net"
+	now := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	if err := db.UpsertChat(chat, "dm", "Biz", now); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+	if err := db.UpsertMessage(UpsertMessageParams{
+		ChatJID:   chat,
+		MsgID:     "m1",
+		SenderJID: chat,
+		Timestamp: now,
+		Text:      "hello",
+		MediaType: "image",
+		Buttons:   []Button{{Type: "quick_reply", DisplayText: "Yes", ID: "yes"}},
+	}); err != nil {
+		t.Fatalf("UpsertMessage: %v", err)
+	}
+	if err := db.MarkMediaDownloaded(chat, "m1", "/tmp/media.jpg", now); err != nil {
+		t.Fatalf("MarkMediaDownloaded: %v", err)
+	}
+
+	if err := db.MarkMessageDeletedForMePreserveMedia(chat, "m1"); err != nil {
+		t.Fatalf("MarkMessageDeletedForMePreserveMedia: %v", err)
+	}
+
+	msg, err := db.GetMessage(chat, "m1")
+	if err != nil {
+		t.Fatalf("GetMessage: %v", err)
+	}
+	if !msg.DeletedForMe {
+		t.Fatal("DeletedForMe = false")
+	}
+	if msg.LocalPath != "/tmp/media.jpg" || msg.DownloadedAt.IsZero() {
+		t.Fatalf("media metadata was not preserved: path=%q downloaded_at=%v", msg.LocalPath, msg.DownloadedAt)
+	}
+	if len(msg.Buttons) != 0 {
+		t.Fatalf("expected buttons cleared after deleted-for-me, got %+v", msg.Buttons)
+	}
+}
+
 func TestMessageButtonsClearedOnUpdateText(t *testing.T) {
 	db := openTestDB(t)
 

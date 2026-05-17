@@ -22,6 +22,7 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 	var refreshChannels bool
 	var webhookURL string
 	var webhookSecret string
+	var webhookAllowPrivate bool
 	var storage syncStorageLimitFlags
 
 	cmd := &cobra.Command{
@@ -80,20 +81,21 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 			}
 
 			res, err := a.Sync(ctx, appPkg.SyncOptions{
-				Mode:            mode,
-				AllowQR:         false,
-				AfterConnect:    afterConnect,
-				DownloadMedia:   downloadMedia,
-				RefreshContacts: refreshContacts,
-				RefreshGroups:   refreshGroups,
-				RefreshChannels: refreshChannels,
-				IdleExit:        idleExit,
-				MaxReconnect:    maxReconnect,
-				MaxMessages:     maxMessages,
-				MaxDBSizeBytes:  maxDBSize,
-				WarnNoLimits:    true,
-				WebhookURL:      webhookURL,
-				WebhookSecret:   webhookSecret,
+				Mode:                mode,
+				AllowQR:             false,
+				AfterConnect:        afterConnect,
+				DownloadMedia:       downloadMedia,
+				RefreshContacts:     refreshContacts,
+				RefreshGroups:       refreshGroups,
+				RefreshChannels:     refreshChannels,
+				IdleExit:            idleExit,
+				MaxReconnect:        maxReconnect,
+				MaxMessages:         maxMessages,
+				MaxDBSizeBytes:      maxDBSize,
+				WarnNoLimits:        true,
+				WebhookURL:          webhookURL,
+				WebhookSecret:       webhookSecret,
+				WebhookAllowPrivate: webhookAllowPrivate,
 			})
 			if err != nil {
 				return err
@@ -120,6 +122,7 @@ func newSyncCmd(flags *rootFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&refreshChannels, "refresh-channels", false, "refresh subscribed channels (live) into local DB")
 	cmd.Flags().StringVar(&webhookURL, "webhook", "", "URL to POST live message JSON")
 	cmd.Flags().StringVar(&webhookSecret, "webhook-secret", "", "HMAC-SHA256 secret for X-Wacli-Signature header")
+	cmd.Flags().BoolVar(&webhookAllowPrivate, "webhook-allow-private", false, "allow webhook URLs that resolve to localhost or private networks")
 	cmd.Flags().Int64Var(&storage.maxMessages, "max-messages", 0, "maximum total messages to keep in the local DB before sync stops (0 = unlimited, or WACLI_SYNC_MAX_MESSAGES)")
 	cmd.Flags().StringVar(&storage.maxDBSize, "max-db-size", "", "maximum wacli.db disk usage before sync stops, e.g. 500MB or 2GB (default: WACLI_SYNC_MAX_DB_SIZE or unlimited)")
 	return cmd

@@ -63,14 +63,16 @@ func TestHandleLiveSyncMessagePostsSignedWebhook(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stopWebhook := a.runSyncWebhookWorker(ctx, SyncOptions{
-		WebhookURL:    srv.URL,
-		WebhookSecret: "supersecret",
+		WebhookURL:          srv.URL,
+		WebhookSecret:       "supersecret",
+		WebhookAllowPrivate: true,
 	}, jobs)
 	defer stopWebhook()
 
 	a.handleLiveSyncMessage(context.Background(), SyncOptions{
-		WebhookURL:    srv.URL,
-		WebhookSecret: "supersecret",
+		WebhookURL:          srv.URL,
+		WebhookSecret:       "supersecret",
+		WebhookAllowPrivate: true,
 	}, evt, &messagesStored, func(string, string) {}, a.newSyncWebhookEnqueuer(ctx, jobs))
 
 	if messagesStored.Load() != 1 {
@@ -113,7 +115,7 @@ func TestHandleLiveSyncMessageDoesNotBlockOnWebhookDelivery(t *testing.T) {
 	jobs := make(chan wa.ParsedMessage, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stopWebhook := a.runSyncWebhookWorker(ctx, SyncOptions{WebhookURL: srv.URL}, jobs)
+	stopWebhook := a.runSyncWebhookWorker(ctx, SyncOptions{WebhookURL: srv.URL, WebhookAllowPrivate: true}, jobs)
 	defer stopWebhook()
 
 	chat := types.JID{User: "15551234567", Server: types.DefaultUserServer}
@@ -129,7 +131,7 @@ func TestHandleLiveSyncMessageDoesNotBlockOnWebhookDelivery(t *testing.T) {
 	var messagesStored atomic.Int64
 	returned := make(chan struct{})
 	go func() {
-		a.handleLiveSyncMessage(context.Background(), SyncOptions{WebhookURL: srv.URL}, evt, &messagesStored, func(string, string) {}, a.newSyncWebhookEnqueuer(ctx, jobs))
+		a.handleLiveSyncMessage(context.Background(), SyncOptions{WebhookURL: srv.URL, WebhookAllowPrivate: true}, evt, &messagesStored, func(string, string) {}, a.newSyncWebhookEnqueuer(ctx, jobs))
 		close(returned)
 	}()
 
@@ -147,4 +149,24 @@ func TestHandleLiveSyncMessageDoesNotBlockOnWebhookDelivery(t *testing.T) {
 		t.Fatal("timed out waiting for webhook worker request")
 	}
 	close(releaseRequest)
+}
+
+func TestPostSyncWebhookRejectsLocalhostByDefault(t *testing.T) {
+	a := newTestApp(t)
+	requested := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested <- struct{}{}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	err := a.postSyncWebhook(context.Background(), SyncOptions{WebhookURL: srv.URL}, wa.ParsedMessage{ID: "m-local"})
+	if err == nil {
+		t.Fatal("expected localhost webhook to be rejected")
+	}
+	select {
+	case <-requested:
+		t.Fatal("webhook request reached localhost")
+	default:
+	}
 }

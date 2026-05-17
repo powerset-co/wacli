@@ -108,7 +108,7 @@ func pruneGroups(a *app.App, days int, includeActive, dryRun, confirm, asJSON bo
 			if name == "" {
 				name = g.JID
 			}
-			fmt.Fprintf(os.Stderr, "Deleted %s\n", name)
+			fmt.Fprintf(os.Stderr, "Deleted %s\n", sanitize(name))
 		}
 	}
 
@@ -130,6 +130,6 @@ func writePruneTargets(w *os.File, prefix string, groups []store.Group) {
 		if g.LeftAt.IsZero() {
 			state = "inactive"
 		}
-		fmt.Fprintf(w, "  - %s (%s, %s)\n", name, g.JID, state)
+		fmt.Fprintf(w, "  - %s (%s, %s)\n", sanitize(name), sanitize(g.JID), state)
 	}
 }

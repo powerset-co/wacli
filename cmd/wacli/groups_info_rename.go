@@ -48,6 +48,9 @@ func newGroupsInfoCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if info == nil {
+				return fmt.Errorf("group info not found for %s", gjid.String())
+			}
 			if info != nil {
 				_ = persistGroupInfo(a.DB(), info)
 			}
@@ -58,7 +61,7 @@ func newGroupsInfoCmd(flags *rootFlags) *cobra.Command {
 
 			fmt.Fprintf(os.Stdout, "JID: %s\nName: %s\nOwner: %s\nType: %s\n",
 				info.JID.String(),
-				info.GroupName.Name,
+				sanitize(info.GroupName.Name),
 				info.OwnerJID.String(),
 				groupKindLabel(info.IsParent, info.LinkedParentJID.String()),
 			)

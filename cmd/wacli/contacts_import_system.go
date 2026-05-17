@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/openclaw/wacli/internal/syscontacts"
 	"github.com/spf13/cobra"
 )
+
+const maxSystemContactsInputBytes = 10 * 1024 * 1024
 
 type systemContactMatch struct {
 	JID           string `json:"jid"`
@@ -106,7 +109,11 @@ and phones.`,
 
 func readSystemContacts(ctx context.Context, input string) ([]syscontacts.Contact, error) {
 	if input != "" {
-		return syscontacts.ReadFile(input)
+		data, err := readRegularFileLimited(input, maxSystemContactsInputBytes)
+		if err != nil {
+			return nil, err
+		}
+		return syscontacts.Decode(bytes.NewReader(data))
 	}
 	return syscontacts.ReadSystem(ctx)
 }

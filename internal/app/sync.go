@@ -27,24 +27,25 @@ const (
 )
 
 type SyncOptions struct {
-	Mode            SyncMode
-	AllowQR         bool
-	OnQRCode        func(string)
-	PairPhoneNumber string
-	OnPairCode      func(string)
-	AfterConnect    func(context.Context) error
-	DownloadMedia   bool
-	RefreshContacts bool
-	RefreshGroups   bool
-	RefreshChannels bool
-	IdleExit        time.Duration // only used for bootstrap/once
-	MaxReconnect    time.Duration // max time to attempt reconnection before giving up (0 = unlimited)
-	MaxMessages     int64         // 0 = unlimited
-	MaxDBSizeBytes  int64         // 0 = unlimited
-	WarnNoLimits    bool
-	WebhookURL      string
-	WebhookSecret   string
-	Verbosity       int // future
+	Mode                SyncMode
+	AllowQR             bool
+	OnQRCode            func(string)
+	PairPhoneNumber     string
+	OnPairCode          func(string)
+	AfterConnect        func(context.Context) error
+	DownloadMedia       bool
+	RefreshContacts     bool
+	RefreshGroups       bool
+	RefreshChannels     bool
+	IdleExit            time.Duration // only used for bootstrap/once
+	MaxReconnect        time.Duration // max time to attempt reconnection before giving up (0 = unlimited)
+	MaxMessages         int64         // 0 = unlimited
+	MaxDBSizeBytes      int64         // 0 = unlimited
+	WarnNoLimits        bool
+	WebhookURL          string
+	WebhookSecret       string
+	WebhookAllowPrivate bool
+	Verbosity           int // future
 }
 
 type SyncResult struct {

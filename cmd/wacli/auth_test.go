@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,6 +51,126 @@ func TestWriteAuthStatus(t *testing.T) {
 				t.Fatalf("status = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestAuthStatusReadOnlyDoesNotCreateStoreFiles(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "store")
+	stdout := captureRootStdout(t, func() {
+		if err := execute([]string{"--store", storeDir, "--read-only", "auth", "status"}); err != nil {
+			t.Fatalf("execute auth status: %v", err)
+		}
+	})
+	if !strings.Contains(stdout, "Not authenticated") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	for _, name := range []string{"session.db", "wacli.db", "LOCK"} {
+		if _, err := os.Stat(filepath.Join(storeDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s stat error = %v, want not exist", name, err)
+		}
+	}
+}
+
+func TestReadOnlyAuthStatusNormalizesDeviceJID(t *testing.T) {
+	storeDir := t.TempDir()
+	db, err := sql.Open("sqlite3", filepath.Join(storeDir, "session.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		_ = db.Close()
+		t.Fatalf("Enable WAL: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE whatsmeow_device (jid TEXT)`); err != nil {
+		_ = db.Close()
+		t.Fatalf("Create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO whatsmeow_device (jid) VALUES (?)`, "15551234567:23@s.whatsapp.net"); err != nil {
+		_ = db.Close()
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	assertNoAuthSQLiteSidecars(t, filepath.Join(storeDir, "session.db"))
+
+	authed, linkedJID, err := readOnlyAuthStatus(storeDir)
+	if err != nil {
+		t.Fatalf("readOnlyAuthStatus: %v", err)
+	}
+	if !authed || linkedJID != "15551234567@s.whatsapp.net" {
+		t.Fatalf("status = %v, %q; want normalized linked JID", authed, linkedJID)
+	}
+	if !strings.Contains(readOnlySessionSQLiteURI(filepath.Join(storeDir, "session.db")), "immutable=1") {
+		t.Fatalf("clean session read-only URI must avoid creating WAL sidecars")
+	}
+	assertNoAuthSQLiteSidecars(t, filepath.Join(storeDir, "session.db"))
+}
+
+func TestReadOnlyAuthStatusReadsLiveWALSidecars(t *testing.T) {
+	storeDir := t.TempDir()
+	db, err := sql.Open("sqlite3", filepath.Join(storeDir, "session.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+		t.Fatalf("Enable WAL: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE whatsmeow_device (jid TEXT)`); err != nil {
+		t.Fatalf("Create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO whatsmeow_device (jid) VALUES (?)`, "15557654321:12@s.whatsapp.net"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	assertAuthSQLiteSidecarsExist(t, filepath.Join(storeDir, "session.db"))
+
+	authed, linkedJID, err := readOnlyAuthStatus(storeDir)
+	if err != nil {
+		t.Fatalf("readOnlyAuthStatus: %v", err)
+	}
+	if !authed || linkedJID != "15557654321@s.whatsapp.net" {
+		t.Fatalf("status = %v, %q; want live WAL linked JID", authed, linkedJID)
+	}
+}
+
+func TestReadOnlySessionSQLiteURIUsesLockingForLiveState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.db")
+	if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
+		t.Fatalf("WriteFile db: %v", err)
+	}
+	for _, suffix := range []string{"-journal", "-wal", "-shm"} {
+		sidecar := path + suffix
+		if err := os.WriteFile(sidecar, []byte("sidecar"), 0o600); err != nil {
+			t.Fatalf("WriteFile %s: %v", suffix, err)
+		}
+		if strings.Contains(readOnlySessionSQLiteURI(path), "immutable=1") {
+			t.Fatalf("%s sidecar URI must preserve SQLite locking", suffix)
+		}
+		if err := os.Remove(sidecar); err != nil {
+			t.Fatalf("Remove %s: %v", suffix, err)
+		}
+	}
+	if !strings.Contains(readOnlySessionSQLiteURI(path), "immutable=1") {
+		t.Fatalf("clean session read-only URI must use immutable mode")
+	}
+}
+
+func assertNoAuthSQLiteSidecars(t *testing.T, path string) {
+	t.Helper()
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); !os.IsNotExist(err) {
+			t.Fatalf("%s stat error = %v, want not exist", path+suffix, err)
+		}
+	}
+}
+
+func assertAuthSQLiteSidecarsExist(t *testing.T, path string) {
+	t.Helper()
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(path + suffix); err != nil {
+			t.Fatalf("%s stat error = %v, want exist", path+suffix, err)
+		}
 	}
 }
 

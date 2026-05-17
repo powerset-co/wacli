@@ -119,3 +119,45 @@ func TestAcquireWithTimeoutDoesNotRetryNonLockErrors(t *testing.T) {
 		t.Fatalf("AcquireWithTimeout classified non-lock error as locked: %v", err)
 	}
 }
+
+func TestProbeDropsStaleInfoWhenUnlocked(t *testing.T) {
+	dir := t.TempDir()
+	lk, err := Acquire(dir)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := lk.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+
+	held, info, err := Probe(dir)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if held {
+		t.Fatalf("Probe held = true, want false")
+	}
+	if info != "" {
+		t.Fatalf("Probe info = %q, want empty stale info", info)
+	}
+}
+
+func TestProbeReadOnlyStaleLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "LOCK")
+	if err := os.WriteFile(path, []byte("pid=1\n"), 0o400); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+
+	held, info, err := Probe(dir)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if held {
+		t.Fatalf("Probe held = true, want false")
+	}
+	if info != "" {
+		t.Fatalf("Probe info = %q, want empty stale info", info)
+	}
+}

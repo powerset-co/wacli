@@ -128,14 +128,14 @@ func newChannelsInfoCmd(flags *rootFlags) *cobra.Command {
 			}
 
 			fmt.Fprintf(os.Stdout, "JID: %s\nName: %s\nDescription: %s\nState: %s\nSubscribers: %d\n",
-				row.JID,
-				row.Name,
-				row.Description,
-				row.State,
+				sanitize(row.JID),
+				sanitize(row.Name),
+				sanitize(row.Description),
+				sanitize(row.State),
 				row.Subscribers,
 			)
 			if row.Role != "" {
-				fmt.Fprintf(os.Stdout, "Role: %s\nMute: %s\n", row.Role, row.Mute)
+				fmt.Fprintf(os.Stdout, "Role: %s\nMute: %s\n", sanitize(row.Role), sanitize(row.Mute))
 			}
 			return nil
 		},
@@ -188,7 +188,7 @@ func newChannelsJoinCmd(flags *rootFlags) *cobra.Command {
 			if flags.asJSON {
 				return out.WriteJSON(os.Stdout, map[string]any{"joined": true, "channel": row})
 			}
-			fmt.Fprintf(os.Stdout, "Joined channel %s (%s).\n", row.Name, row.JID)
+			fmt.Fprintf(os.Stdout, "Joined channel %s (%s).\n", sanitize(row.Name), sanitize(row.JID))
 			return nil
 		},
 	}

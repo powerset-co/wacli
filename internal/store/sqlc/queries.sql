@@ -51,6 +51,9 @@ DELETE FROM chats WHERE jid = ?;
 -- name: CountChatMessages :one
 SELECT COUNT(1) FROM messages WHERE chat_jid = ?;
 
+-- name: CountChats :one
+SELECT COUNT(1) FROM chats;
+
 -- name: ListContacts :many
 SELECT c.jid,
        COALESCE(c.phone,'') AS phone,
@@ -141,6 +144,12 @@ UPDATE groups SET left_at = ?, updated_at = ? WHERE jid = ?;
 -- name: ListJoinedGroupJIDs :many
 SELECT jid FROM groups WHERE left_at IS NULL;
 
+-- name: CountGroups :one
+SELECT COUNT(1) FROM groups WHERE left_at IS NULL;
+
+-- name: CountLeftGroups :one
+SELECT COUNT(1) FROM groups WHERE left_at IS NOT NULL;
+
 -- name: DeleteGroupParticipants :exec
 DELETE FROM group_participants WHERE group_jid = ?;
 
@@ -203,6 +212,14 @@ SET deleted_for_me = 1,
     downloaded_at = NULL,
     edited = 0,
     edited_ts = 0
+WHERE chat_jid = ? AND msg_id = ?;
+
+-- name: MarkMessageDeletedForMePreserveMedia :execrows
+UPDATE messages
+SET deleted_for_me = 1,
+    text = NULL,
+    display_text = ?,
+    buttons = NULL
 WHERE chat_jid = ? AND msg_id = ?;
 
 -- name: UpdateMessageText :execrows

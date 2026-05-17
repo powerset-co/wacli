@@ -204,6 +204,34 @@ func TestWriteMessageShowPrefersDisplayTextAndMediaDetails(t *testing.T) {
 	}
 }
 
+func TestWriteMessageShowPreservesMultilineBody(t *testing.T) {
+	msg := store.Message{
+		ChatJID:     "chat@s.whatsapp.net",
+		SenderJID:   "sender@s.whatsapp.net",
+		MsgID:       "mid",
+		Timestamp:   time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),
+		Text:        "line 1\nline 2\tindented\x1b[31m",
+		DisplayText: "display 1\ndisplay 2",
+	}
+
+	var out bytes.Buffer
+	if err := writeMessageShow(&out, msg); err != nil {
+		t.Fatalf("writeMessageShow: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"\ndisplay 1\ndisplay 2\n",
+		"Raw text:\nline 1\nline 2\tindented\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "\x1b") {
+		t.Fatalf("output kept escape sequence:\n%q", got)
+	}
+}
+
 func TestMessagesSearchCommandExposesMediaFilters(t *testing.T) {
 	cmd := newMessagesSearchCmd(&rootFlags{})
 	for _, name := range []string{"has-media", "type", "forwarded", "starred"} {
@@ -400,6 +428,31 @@ func TestWriteMessageShowIncludesForwardedMetadata(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Forwarding score: 3") {
 		t.Fatalf("expected forwarding score, got:\n%s", out.String())
+	}
+}
+
+func TestDeleteLocalMediaIfRequestedReportsActualRemoval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "media.bin")
+	if err := os.WriteFile(path, []byte("media"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	deleted, err := deleteLocalMediaIfRequested(true, path)
+	if err != nil {
+		t.Fatalf("deleteLocalMediaIfRequested: %v", err)
+	}
+	if !deleted {
+		t.Fatal("deleted = false, want true")
+	}
+	deleted, err = deleteLocalMediaIfRequested(true, path)
+	if err != nil {
+		t.Fatalf("delete stale media path: %v", err)
+	}
+	if deleted {
+		t.Fatal("deleted stale path = true, want false")
+	}
+	deleted, err = deleteLocalMediaIfRequested(false, path)
+	if err != nil || deleted {
+		t.Fatalf("delete disabled = %v, %v; want false, nil", deleted, err)
 	}
 }
 

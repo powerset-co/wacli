@@ -72,27 +72,27 @@ func writeMessagesStarred(dst io.Writer, msgs []store.Message, fullOutput bool) 
 }
 
 func writeMessageShow(dst io.Writer, m store.Message) error {
-	fmt.Fprintf(dst, "Chat: %s\n", m.ChatJID)
+	fmt.Fprintf(dst, "Chat: %s\n", sanitize(m.ChatJID))
 	if m.ChatName != "" {
-		fmt.Fprintf(dst, "Chat name: %s\n", m.ChatName)
+		fmt.Fprintf(dst, "Chat name: %s\n", sanitize(m.ChatName))
 	}
-	fmt.Fprintf(dst, "ID: %s\n", m.MsgID)
+	fmt.Fprintf(dst, "ID: %s\n", sanitize(m.MsgID))
 	fmt.Fprintf(dst, "Time: %s\n", m.Timestamp.Local().Format(time.RFC3339))
-	fmt.Fprintf(dst, "From: %s\n", messageFromDetail(m))
+	fmt.Fprintf(dst, "From: %s\n", sanitize(messageFromDetail(m)))
 	if m.MediaType != "" {
-		fmt.Fprintf(dst, "Media: %s\n", m.MediaType)
+		fmt.Fprintf(dst, "Media: %s\n", sanitize(m.MediaType))
 	}
 	if m.MediaCaption != "" {
-		fmt.Fprintf(dst, "Caption: %s\n", m.MediaCaption)
+		fmt.Fprintf(dst, "Caption: %s\n", sanitize(m.MediaCaption))
 	}
 	if m.Filename != "" {
-		fmt.Fprintf(dst, "Filename: %s\n", m.Filename)
+		fmt.Fprintf(dst, "Filename: %s\n", sanitize(m.Filename))
 	}
 	if m.MimeType != "" {
-		fmt.Fprintf(dst, "MIME type: %s\n", m.MimeType)
+		fmt.Fprintf(dst, "MIME type: %s\n", sanitize(m.MimeType))
 	}
 	if m.LocalPath != "" {
-		fmt.Fprintf(dst, "Downloaded: %s\n", m.LocalPath)
+		fmt.Fprintf(dst, "Downloaded: %s\n", sanitize(m.LocalPath))
 		if !m.DownloadedAt.IsZero() {
 			fmt.Fprintf(dst, "Downloaded at: %s\n", m.DownloadedAt.Local().Format(time.RFC3339))
 		}
@@ -115,9 +115,9 @@ func writeMessageShow(dst io.Writer, m store.Message) error {
 	if m.DeletedForMe {
 		fmt.Fprintln(dst, "Deleted for me: yes")
 	}
-	fmt.Fprintf(dst, "\n%s\n", messageText(m))
+	fmt.Fprintf(dst, "\n%s\n", sanitizeBody(messageText(m)))
 	if raw := messageRawText(m); raw != "" {
-		fmt.Fprintf(dst, "\nRaw text:\n%s\n", raw)
+		fmt.Fprintf(dst, "\nRaw text:\n%s\n", sanitizeBody(raw))
 	}
 	return nil
 }

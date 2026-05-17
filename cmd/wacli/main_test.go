@@ -2,8 +2,11 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/openclaw/wacli/internal/fsutil"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 )
 
@@ -34,5 +37,41 @@ func TestDetectDeviceLabelFallbacks(t *testing.T) {
 	}
 	if got := detectDeviceLabel("", noHost, noFile); got != "wacli" {
 		t.Fatalf("empty label = %q", got)
+	}
+}
+
+func TestSanitizeReplacesTerminalControls(t *testing.T) {
+	got := sanitize("Alice\x1b[31m\nBob\x7f")
+	if got != "Alice Bob" {
+		t.Fatalf("sanitize = %q", got)
+	}
+}
+
+func TestSanitizeBodyPreservesMessageLayout(t *testing.T) {
+	got := sanitizeBody("one\n\ttwo\x1b[31m\rthree\x7f")
+	if got != "one\n\ttwothree" {
+		t.Fatalf("sanitizeBody = %q", got)
+	}
+}
+
+func TestReadRegularFileLimitedRejectsNonRegularAndOversized(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := readRegularFileLimited(dir, 10); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+		t.Fatalf("expected non-regular error, got %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "input.bin")
+	if err := fsutil.WritePrivateFile(path, []byte("hello")); err != nil {
+		t.Fatalf("WritePrivateFile: %v", err)
+	}
+	if _, err := readRegularFileLimited(path, 4); err == nil || !strings.Contains(err.Error(), "file too large") {
+		t.Fatalf("expected file too large error, got %v", err)
+	}
+	got, err := readRegularFileLimited(path, 5)
+	if err != nil {
+		t.Fatalf("readRegularFileLimited: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Fatalf("data = %q", string(got))
 	}
 }

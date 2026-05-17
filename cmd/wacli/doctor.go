@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	appPkg "github.com/openclaw/wacli/internal/app"
 	"github.com/openclaw/wacli/internal/lock"
 	"github.com/openclaw/wacli/internal/out"
 	"github.com/openclaw/wacli/internal/store"
@@ -78,20 +79,20 @@ func doctorStoreStatsFromStoreStats(stats store.StoreStats) doctorStoreStats {
 
 func writeDoctorReport(w io.Writer, rep doctorReport) {
 	tw := newTableWriter(w)
-	fmt.Fprintf(tw, "STORE\t%s\n", rep.StoreDir)
+	fmt.Fprintf(tw, "STORE\t%s\n", sanitize(rep.StoreDir))
 	fmt.Fprintf(tw, "LOCKED\t%v\n", rep.LockHeld)
 	if rep.LockHeld && rep.LockInfo != "" {
-		fmt.Fprintf(tw, "LOCK_INFO\t%s\n", rep.LockInfo)
+		fmt.Fprintf(tw, "LOCK_INFO\t%s\n", sanitize(rep.LockInfo))
 	}
 	if rep.LockOwnerPID > 0 {
 		fmt.Fprintf(tw, "LOCK_OWNER_PID\t%d\n", rep.LockOwnerPID)
 	}
 	fmt.Fprintf(tw, "AUTHENTICATED\t%v\n", rep.Authed)
 	if rep.LinkedJID != "" {
-		fmt.Fprintf(tw, "LINKED_JID\t%s\n", rep.LinkedJID)
+		fmt.Fprintf(tw, "LINKED_JID\t%s\n", sanitize(rep.LinkedJID))
 	}
 	fmt.Fprintf(tw, "CONNECTED\t%v\n", rep.Connected)
-	fmt.Fprintf(tw, "CONNECTION_STATE\t%s\n", rep.ConnectionState)
+	fmt.Fprintf(tw, "CONNECTION_STATE\t%s\n", sanitize(rep.ConnectionState))
 	fmt.Fprintf(tw, "FTS5\t%v\n", rep.FTSEnabled)
 	if rep.Store != nil {
 		fmt.Fprintf(tw, "MESSAGES\t%d\n", rep.Store.Messages)
@@ -122,27 +123,62 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 
 			var lockHeld bool
 			var lockInfo string
-			if b, err := os.ReadFile(filepath.Join(storeDir, "LOCK")); err == nil {
-				lockInfo = strings.TrimSpace(string(b))
-			}
-			if lk, err := lock.Acquire(storeDir); err == nil {
-				_ = lk.Release()
+			if flags.isReadOnly() {
+				if connect {
+					return flags.requireWritable()
+				}
+				if held, info, err := lock.Probe(storeDir); err == nil {
+					lockHeld = held
+					lockInfo = info
+				} else {
+					lockHeld = true
+					lockInfo = readDoctorLockInfo(storeDir)
+				}
 			} else {
-				lockHeld = true
+				if lk, err := lock.Acquire(storeDir); err == nil {
+					_ = lk.Release()
+				} else {
+					lockHeld = true
+					lockInfo = readDoctorLockInfo(storeDir)
+				}
 			}
 
 			var storeErr string
-			a, lk, err := newApp(ctx, flags, connect, true)
-			if err != nil {
-				storeErr = err.Error()
+			var db *store.DB
+			var a *appPkg.App
+			var closeFn func()
+			if flags.isReadOnly() {
+				dbPath := filepath.Join(storeDir, "wacli.db")
+				roDB, err := store.OpenReadOnly(dbPath)
+				if err != nil {
+					storeErr = err.Error()
+				} else {
+					db = roDB
+					closeFn = func() { _ = roDB.Close() }
+				}
 			} else {
-				defer closeApp(a, lk)
+				appInstance, lk, err := newApp(ctx, flags, connect, true)
+				if err != nil {
+					storeErr = err.Error()
+				} else {
+					a = appInstance
+					db = appInstance.DB()
+					closeFn = func() { closeApp(appInstance, lk) }
+				}
+			}
+			if closeFn != nil {
+				defer closeFn()
 			}
 
 			var authed bool
 			var connected bool
 			var linkedJID string
-			if a != nil {
+			if flags.isReadOnly() {
+				if roAuthed, roLinkedJID, err := readOnlyAuthStatus(storeDir); err == nil {
+					authed = roAuthed
+					linkedJID = roLinkedJID
+				}
+			} else if a != nil {
 				if err := a.OpenWA(); err == nil {
 					authed = a.WA().IsAuthed()
 					if authed {
@@ -158,10 +194,12 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 			lockOwnerPID := parseLockOwnerPID(lockInfo)
 
 			var stats *doctorStoreStats
-			if a != nil {
-				if raw, err := a.DB().Stats(); err == nil {
+			if db != nil {
+				if raw, err := db.Stats(); err == nil {
 					converted := doctorStoreStatsFromStoreStats(raw)
 					stats = &converted
+				} else if storeErr == "" {
+					storeErr = err.Error()
 				}
 			}
 
@@ -174,7 +212,7 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 				LinkedJID:       linkedJID,
 				Connected:       connected,
 				ConnectionState: doctorConnectionState(authed, connected, lockHeld, connect),
-				FTSEnabled:      a != nil && a.DB().HasFTS(),
+				FTSEnabled:      db != nil && db.HasFTS(),
 				Store:           stats,
 				StoreError:      storeErr,
 			}
@@ -186,7 +224,7 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 			writeDoctorReport(os.Stdout, rep)
 
 			if rep.StoreError != "" {
-				fmt.Fprintf(os.Stdout, "\nERROR: store could not be opened: %s\n", rep.StoreError)
+				fmt.Fprintf(os.Stdout, "\nERROR: store could not be opened: %s\n", sanitize(rep.StoreError))
 				fmt.Fprintln(os.Stdout, "Tip: check that the store directory exists and is not corrupted.")
 			}
 			if rep.LockHeld {
@@ -198,4 +236,12 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 
 	cmd.Flags().BoolVar(&connect, "connect", false, "try connecting to WhatsApp (requires store lock)")
 	return cmd
+}
+
+func readDoctorLockInfo(storeDir string) string {
+	b, err := os.ReadFile(filepath.Join(storeDir, "LOCK"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }

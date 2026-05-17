@@ -14,7 +14,6 @@ import (
 	"math"
 	"mime"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -32,6 +31,7 @@ import (
 
 const maxSendFileSize = 100 * 1024 * 1024
 const imageThumbnailMaxDimension = 96
+const imageThumbnailMaxPixels = 40_000_000
 const voiceWaveformSamples = 64
 const voiceWaveformMax = 100
 
@@ -230,8 +230,10 @@ func newImageMessage(up whatsmeow.UploadResponse, mimeType, caption string, data
 		Height:        proto.Uint32(uint32(cfg.Height)),
 		Width:         proto.Uint32(uint32(cfg.Width)),
 	}
-	if thumbnail, err := imageJPEGThumbnail(data); err == nil && len(thumbnail) > 0 {
-		msg.JPEGThumbnail = thumbnail
+	if cfg.Width <= imageThumbnailMaxPixels/cfg.Height {
+		if thumbnail, err := imageJPEGThumbnail(data); err == nil && len(thumbnail) > 0 {
+			msg.JPEGThumbnail = thumbnail
+		}
 	}
 	return msg, nil
 }
@@ -309,14 +311,7 @@ func newAudioMessage(up whatsmeow.UploadResponse, mimeType string, ptt bool, met
 }
 
 func readSendFileData(filePath string) ([]byte, error) {
-	info, err := os.Stat(filePath)
-	if err != nil {
-		return nil, err
-	}
-	if info.Size() > maxSendFileSize {
-		return nil, fmt.Errorf("file too large (%d bytes); maximum send file size is %d bytes", info.Size(), maxSendFileSize)
-	}
-	return os.ReadFile(filePath)
+	return readRegularFileLimited(filePath, maxSendFileSize)
 }
 
 func attachSendFileReplyContext(msg *waProto.Message, info *waProto.ContextInfo) {

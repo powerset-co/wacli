@@ -50,6 +50,39 @@ func (q *Queries) CountChatMessages(ctx context.Context, chatJid string) (int64,
 	return count, err
 }
 
+const countChats = `-- name: CountChats :one
+SELECT COUNT(1) FROM chats
+`
+
+func (q *Queries) CountChats(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countChats)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countGroups = `-- name: CountGroups :one
+SELECT COUNT(1) FROM groups WHERE left_at IS NULL
+`
+
+func (q *Queries) CountGroups(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countGroups)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countLeftGroups = `-- name: CountLeftGroups :one
+SELECT COUNT(1) FROM groups WHERE left_at IS NOT NULL
+`
+
+func (q *Queries) CountLeftGroups(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countLeftGroups)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countMessages = `-- name: CountMessages :one
 SELECT COUNT(1) FROM messages
 `
@@ -891,6 +924,29 @@ type MarkMessageDeletedForMeParams struct {
 
 func (q *Queries) MarkMessageDeletedForMe(ctx context.Context, arg MarkMessageDeletedForMeParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, markMessageDeletedForMe, arg.DisplayText, arg.ChatJid, arg.MsgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markMessageDeletedForMePreserveMedia = `-- name: MarkMessageDeletedForMePreserveMedia :execrows
+UPDATE messages
+SET deleted_for_me = 1,
+    text = NULL,
+    display_text = ?,
+    buttons = NULL
+WHERE chat_jid = ? AND msg_id = ?
+`
+
+type MarkMessageDeletedForMePreserveMediaParams struct {
+	DisplayText sql.NullString
+	ChatJid     string
+	MsgID       string
+}
+
+func (q *Queries) MarkMessageDeletedForMePreserveMedia(ctx context.Context, arg MarkMessageDeletedForMePreserveMediaParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markMessageDeletedForMePreserveMedia, arg.DisplayText, arg.ChatJid, arg.MsgID)
 	if err != nil {
 		return 0, err
 	}

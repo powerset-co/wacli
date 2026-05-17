@@ -203,6 +203,22 @@ func newAuthStatusCmd(flags *rootFlags) *cobra.Command {
 			ctx, cancel := withTimeout(context.Background(), flags)
 			defer cancel()
 
+			if flags.isReadOnly() {
+				storeDir, err := resolveStoreDir(flags)
+				if err != nil {
+					return err
+				}
+				authed, linkedJID, err := readOnlyAuthStatus(storeDir)
+				if err != nil {
+					return err
+				}
+				if flags.asJSON {
+					return out.WriteJSON(os.Stdout, authStatusPayload(authed, linkedJID))
+				}
+				writeAuthStatus(os.Stdout, authed, linkedJID)
+				return nil
+			}
+
 			a, lk, err := newApp(ctx, flags, false, true)
 			if err != nil {
 				return err

@@ -70,7 +70,9 @@ func newMediaDownloadCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			now := time.Now().UTC()
-			_ = a.DB().MarkMediaDownloaded(info.ChatJID, info.MsgID, target, now)
+			if err := a.DB().MarkMediaDownloaded(info.ChatJID, info.MsgID, target, now); err != nil {
+				return fmt.Errorf("record media download: %w", err)
+			}
 
 			resp := map[string]any{
 				"chat":          info.ChatJID,

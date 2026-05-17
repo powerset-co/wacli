@@ -140,7 +140,7 @@ func newChatsShowCmd(flags *rootFlags) *cobra.Command {
 				return out.WriteJSON(os.Stdout, c)
 			}
 			fmt.Fprintf(os.Stdout, "JID: %s\nKind: %s\nName: %s\nLast: %s\nArchived: %t\nPinned: %t\nMuted: %t\nMuted until: %s\nUnread: %t\n",
-				c.JID, c.Kind, c.Name, c.LastMessageTS.Local().Format(time.RFC3339), c.Archived, c.Pinned, c.Muted(), formatMutedUntil(c.MutedUntil), c.Unread)
+				sanitize(c.JID), sanitize(c.Kind), sanitize(c.Name), c.LastMessageTS.Local().Format(time.RFC3339), c.Archived, c.Pinned, c.Muted(), formatMutedUntil(c.MutedUntil), c.Unread)
 			return nil
 		},
 	}

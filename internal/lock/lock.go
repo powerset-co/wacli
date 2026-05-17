@@ -90,6 +90,34 @@ func IsLocked(err error) bool {
 	return errors.Is(err, ErrLocked)
 }
 
+func Probe(storeDir string) (bool, string, error) {
+	path := filepath.Join(storeDir, "LOCK")
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, "", nil
+		}
+		if !errors.Is(err, os.ErrPermission) {
+			return false, "", fmt.Errorf("open lock file: %w", err)
+		}
+		f, err = os.OpenFile(path, os.O_RDONLY, 0)
+		if err != nil {
+			return false, "", fmt.Errorf("open lock file: %w", err)
+		}
+	}
+	defer f.Close()
+
+	if err := lockFile(f); err != nil {
+		if !isLockContention(err) {
+			return false, "", fmt.Errorf("lock file: %w", err)
+		}
+		b, _ := os.ReadFile(path)
+		return true, strings.TrimSpace(string(b)), nil
+	}
+	_ = unlockFile(f)
+	return false, "", nil
+}
+
 func (l *Lock) Release() error {
 	if l == nil || l.f == nil {
 		return nil

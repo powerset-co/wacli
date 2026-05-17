@@ -559,11 +559,11 @@ func resolveVoterName(a *app.App, ctx context.Context, jid string) string {
 }
 
 func renderPollShow(w *os.File, a *app.App, ctx context.Context, poll store.Poll, votes []store.PollVote, aggregates map[string]int) {
-	fmt.Fprintf(w, "Poll: %s\n", poll.Question)
-	fmt.Fprintf(w, "Chat: %s   Msg: %s   Selectable: %d\n", poll.ChatJID, poll.MsgID, poll.SelectableCount)
+	fmt.Fprintf(w, "Poll: %s\n", sanitize(poll.Question))
+	fmt.Fprintf(w, "Chat: %s   Msg: %s   Selectable: %d\n", sanitize(poll.ChatJID), sanitize(poll.MsgID), poll.SelectableCount)
 	fmt.Fprintf(w, "\nResults (%d voter(s)):\n", len(votes))
 	for _, opt := range poll.Options {
-		fmt.Fprintf(w, "  %3d  %s\n", aggregates[opt], opt)
+		fmt.Fprintf(w, "  %3d  %s\n", aggregates[opt], sanitize(opt))
 	}
 	if len(votes) == 0 {
 		fmt.Fprintln(w, "\nNo votes yet.")
@@ -576,7 +576,11 @@ func renderPollShow(w *os.File, a *app.App, ctx context.Context, poll store.Poll
 		if name != "" && name != v.VoterJID {
 			who = fmt.Sprintf("%s (%s)", name, v.VoterJID)
 		}
-		fmt.Fprintf(w, "  %s — %s [%s]\n", who, strings.Join(v.Selected, ", "), v.VotedAt.Format(time.RFC3339))
+		selected := make([]string, 0, len(v.Selected))
+		for _, option := range v.Selected {
+			selected = append(selected, sanitize(option))
+		}
+		fmt.Fprintf(w, "  %s — %s [%s]\n", sanitize(who), strings.Join(selected, ", "), v.VotedAt.Format(time.RFC3339))
 	}
 }
 
@@ -661,11 +665,11 @@ func renderPollsList(w *os.File, polls []store.Poll) {
 	for _, p := range polls {
 		fmt.Fprintf(w, "%s  %s\n  chat=%s  options=%d  selectable=%d  id=%s\n",
 			p.CreatedAt.Format(time.RFC3339),
-			p.Question,
-			p.ChatJID,
+			sanitize(p.Question),
+			sanitize(p.ChatJID),
 			len(p.Options),
 			p.SelectableCount,
-			p.MsgID,
+			sanitize(p.MsgID),
 		)
 	}
 }

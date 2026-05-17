@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/openclaw/wacli/internal/config"
 	"github.com/openclaw/wacli/internal/fsutil"
+	"github.com/openclaw/wacli/internal/lock"
 	"github.com/openclaw/wacli/internal/out"
 	"github.com/spf13/cobra"
 )
@@ -92,29 +95,31 @@ func newAccountsAddCmd(flags *rootFlags) *cobra.Command {
 				}
 			}
 			path := config.DefaultConfigPath()
-			cfg, _, err := config.LoadAccountsConfigIfExists(path)
-			if err != nil {
-				return err
-			}
-			if _, ok := cfg.Accounts[name]; ok {
-				return fmt.Errorf("account %q already exists", name)
-			}
-			cfg.Accounts[name] = config.AccountEntry{Store: config.DefaultAccountStore(name)}
-			if cfg.DefaultAccount == "" {
-				cfg.DefaultAccount = name
-			}
-			storeDir := config.ListAccounts(path, cfg)
 			var added config.Account
-			for _, account := range storeDir {
-				if account.Name == name {
-					added = account
-					break
+			if err := withAccountsConfigLock(path, flags, func() error {
+				cfg, _, err := config.LoadAccountsConfigIfExists(path)
+				if err != nil {
+					return err
 				}
-			}
-			if err := fsutil.EnsurePrivateDir(added.StoreDir); err != nil {
-				return fmt.Errorf("create account store: %w", err)
-			}
-			if err := config.SaveAccountsConfig(path, cfg); err != nil {
+				if _, ok := cfg.Accounts[name]; ok {
+					return fmt.Errorf("account %q already exists", name)
+				}
+				cfg.Accounts[name] = config.AccountEntry{Store: config.DefaultAccountStore(name)}
+				if cfg.DefaultAccount == "" {
+					cfg.DefaultAccount = name
+				}
+				storeDir := config.ListAccounts(path, cfg)
+				for _, account := range storeDir {
+					if account.Name == name {
+						added = account
+						break
+					}
+				}
+				if err := fsutil.EnsurePrivateDir(added.StoreDir); err != nil {
+					return fmt.Errorf("create account store: %w", err)
+				}
+				return config.SaveAccountsConfig(path, cfg)
+			}); err != nil {
 				return err
 			}
 			if noAuth {
@@ -174,15 +179,17 @@ func newAccountsUseCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			path := config.DefaultConfigPath()
-			cfg, err := config.LoadAccountsConfig(path)
-			if err != nil {
-				return err
-			}
-			if _, ok := cfg.Accounts[name]; !ok {
-				return fmt.Errorf("account %q is not configured", name)
-			}
-			cfg.DefaultAccount = name
-			if err := config.SaveAccountsConfig(path, cfg); err != nil {
+			if err := withAccountsConfigLock(path, flags, func() error {
+				cfg, err := config.LoadAccountsConfig(path)
+				if err != nil {
+					return err
+				}
+				if _, ok := cfg.Accounts[name]; !ok {
+					return fmt.Errorf("account %q is not configured", name)
+				}
+				cfg.DefaultAccount = name
+				return config.SaveAccountsConfig(path, cfg)
+			}); err != nil {
 				return err
 			}
 			if flags.asJSON {
@@ -231,23 +238,26 @@ func newAccountsRemoveCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			path := config.DefaultConfigPath()
-			cfg, err := config.LoadAccountsConfig(path)
-			if err != nil {
-				return err
-			}
-			entry, ok := cfg.Accounts[name]
-			if !ok {
-				return fmt.Errorf("account %q is not configured", name)
-			}
-			storeDir := config.ListAccounts(path, &config.AccountsConfig{
-				DefaultAccount: cfg.DefaultAccount,
-				Accounts:       map[string]config.AccountEntry{name: entry},
-			})[0].StoreDir
-			delete(cfg.Accounts, name)
-			if cfg.DefaultAccount == name {
-				cfg.DefaultAccount = ""
-			}
-			if err := config.SaveAccountsConfig(path, cfg); err != nil {
+			var storeDir string
+			if err := withAccountsConfigLock(path, flags, func() error {
+				cfg, err := config.LoadAccountsConfig(path)
+				if err != nil {
+					return err
+				}
+				entry, ok := cfg.Accounts[name]
+				if !ok {
+					return fmt.Errorf("account %q is not configured", name)
+				}
+				storeDir = config.ListAccounts(path, &config.AccountsConfig{
+					DefaultAccount: cfg.DefaultAccount,
+					Accounts:       map[string]config.AccountEntry{name: entry},
+				})[0].StoreDir
+				delete(cfg.Accounts, name)
+				if cfg.DefaultAccount == name {
+					cfg.DefaultAccount = ""
+				}
+				return config.SaveAccountsConfig(path, cfg)
+			}); err != nil {
 				return err
 			}
 			if flags.asJSON {
@@ -260,6 +270,19 @@ func newAccountsRemoveCmd(flags *rootFlags) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func withAccountsConfigLock(path string, flags *rootFlags, fn func() error) error {
+	var wait time.Duration
+	if flags != nil {
+		wait = flags.lockWait
+	}
+	lk, err := lock.AcquireWithTimeout(context.Background(), filepath.Dir(path), wait)
+	if err != nil {
+		return fmt.Errorf("lock account config: %w", err)
+	}
+	defer func() { _ = lk.Release() }()
+	return fn()
 }
 
 func sortedAccounts(path string, cfg *config.AccountsConfig) []config.Account {

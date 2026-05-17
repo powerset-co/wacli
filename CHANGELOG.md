@@ -10,6 +10,16 @@
 ### Security
 
 - CI: pin GitHub Actions and Docker base images to immutable refs and pin GoReleaser to an exact version.
+- Send: block automatic link previews from fetching localhost, private, link-local, multicast, and other non-public addresses.
+- Sync: validate webhook URLs, redact webhook errors, disable private-network webhook targets by default, and add `--webhook-allow-private` for trusted local endpoints.
+
+### Fixed
+
+- Accounts: serialize account config mutations with a config lock and save through unique temporary files.
+- CLI: strip terminal control characters from human/table output.
+- Media: enforce regular-file and size limits for sends, stickers, voice notes, profile pictures, contacts imports, thumbnails, and unknown-length downloads.
+- Messages: make `--delete-media --for-me` remove the stored local media file when present.
+- Store: count all chats and groups in `store stats` instead of the first 50 entries.
 
 ### Fixed
 

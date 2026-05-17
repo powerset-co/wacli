@@ -68,6 +68,14 @@ func (d *DB) MarkGroupsMissingFrom(joined map[string]bool, leftAt time.Time) err
 	return nil
 }
 
+func (d *DB) CountGroups() (int64, error) {
+	return d.q.CountGroups(storeCtx())
+}
+
+func (d *DB) CountLeftGroups() (int64, error) {
+	return d.q.CountLeftGroups(storeCtx())
+}
+
 func (d *DB) ReplaceGroupParticipants(groupJID string, participants []GroupParticipant) (err error) {
 	tx, err := d.sql.Begin()
 	if err != nil {

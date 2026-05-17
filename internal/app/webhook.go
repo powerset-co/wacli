@@ -7,18 +7,36 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/openclaw/wacli/internal/linkpreview"
 	"github.com/openclaw/wacli/internal/wa"
 )
 
-var syncWebhookHTTPClient = &http.Client{Timeout: 10 * time.Second}
+var syncWebhookPrivateHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
+var syncWebhookSafeHTTPClient = newSyncWebhookSafeHTTPClient()
+
+func newSyncWebhookSafeHTTPClient() *http.Client {
+	client := linkpreview.NewSafeHTTPClient()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
+}
 
 func syncWebhookEnabled(opts SyncOptions) bool {
 	return strings.TrimSpace(opts.WebhookURL) != ""
@@ -100,9 +118,13 @@ func (a *App) postSyncWebhook(ctx context.Context, opts SyncOptions, pm wa.Parse
 	if err != nil {
 		return err
 	}
-	resp, err := syncWebhookHTTPClient.Do(req)
+	client := syncWebhookSafeHTTPClient
+	if opts.WebhookAllowPrivate {
+		client = syncWebhookPrivateHTTPClient
+	}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("post webhook: %w", err)
+		return fmt.Errorf("post webhook %s: %s", redactedWebhookURL(webhookURL), redactWebhookError(webhookURL, err))
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -113,9 +135,12 @@ func (a *App) postSyncWebhook(ctx context.Context, opts SyncOptions, pm wa.Parse
 }
 
 func newSyncWebhookRequest(ctx context.Context, webhookURL, secret, version string, payload []byte) (*http.Request, error) {
+	if err := validateWebhookURL(webhookURL); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("create webhook request: %w", err)
+		return nil, fmt.Errorf("create webhook request %s: %s", redactedWebhookURL(webhookURL), redactWebhookError(webhookURL, err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "wacli/"+version)
@@ -123,6 +148,37 @@ func newSyncWebhookRequest(ctx context.Context, webhookURL, secret, version stri
 		req.Header.Set("X-Wacli-Signature", syncWebhookSignature(secret, payload))
 	}
 	return req, nil
+}
+
+func validateWebhookURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("invalid webhook URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("webhook URL must use http or https")
+	}
+	return nil
+}
+
+func redactedWebhookURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "<invalid-url>"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.Path = ""
+	return u.String()
+}
+
+func redactWebhookError(_ string, err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Op != "" {
+		return urlErr.Op + " failed"
+	}
+	return "request failed"
 }
 
 func syncWebhookSignature(secret string, payload []byte) string {
