@@ -61,7 +61,7 @@ archives:
     formats:
       - tar.gz
     name_template: >-
-      {{ .ProjectName }}-{{ if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}-{{ if eq .Arch "all" }}universal{{ else }}{{ .Arch }}{{ end }}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
         formats:
@@ -71,7 +71,7 @@ archives:
       - README.md
 
 checksum:
-  name_template: checksums-linux-windows.txt
+  name_template: checksums.txt
 
 changelog:
   disable: true

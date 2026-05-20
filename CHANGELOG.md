@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Release: publish target-specific macOS/Linux/Windows archives with one combined checksum file and update the OpenClaw Homebrew tap.
+
 ## 0.9.2 - 2026-05-17
 
 ### Added

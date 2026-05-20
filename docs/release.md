@@ -15,9 +15,11 @@ To cut a release:
 
 To re-release an existing tag, run the workflow manually and pass the tag (e.g. `v0.1.0`).
 
-Expected macOS artifact name (used by the tap updater):
+Expected macOS artifact names (used by the tap updater):
 
-- `wacli-macos-universal.tar.gz`
+- `wacli_<version>_darwin_amd64.tar.gz`
+- `wacli_<version>_darwin_arm64.tar.gz`
+- `wacli_<version>_darwin_universal.tar.gz`
 
 Other artifacts:
 
@@ -30,7 +32,7 @@ early if someone tries to compile it with `CGO_ENABLED=0`.
 
 ## Homebrew Tap
 
-The release workflow dispatches the `Update Formula` workflow in `steipete/homebrew-tap` after the macOS artifact is published when the tap token is configured. The tap workflow owns the formula-editing logic and updates both the macOS artifact SHA256 and the Linux source archive SHA256 in `Formula/wacli.rb`.
+The release workflow dispatches the `Update Formula` workflow in `openclaw/homebrew-tap` after all release artifacts are published when the tap token is configured. The tap workflow owns the formula-editing logic and updates the target-specific macOS and Linux binary URLs and SHA256 values in `Formula/wacli.rb`.
 
 Optional repository secret:
 
