@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Sync: keep linked-device presence accurate while sync is running and send unavailable presence on shutdown so phones resume push notifications. (#283 - thanks @dovocoder)
 - WhatsApp connectivity: update `whatsmeow` for the current WhatsApp protocol and fix `405 (Client Outdated)` failures. (#280)
 
 ## 0.11.1 - 2026-06-11
