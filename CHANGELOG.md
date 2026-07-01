@@ -6,10 +6,16 @@
 
 ### Security
 
+- Store: escape SQLite file URI path delimiters so store names cannot alter connection parameters. (thanks @vincentkoc)
+- Docs: escape raw HTML in generated-site link labels and give duplicate headings stable unique IDs. (thanks @vincentkoc)
+
 ### Fixed
 
+- WhatsApp compatibility: update `whatsmeow` for current protocol metadata, privacy tokens on more request types, and pairing/connect handling.
 - Sync: keep linked-device presence accurate while sync is running and send unavailable presence on shutdown so phones resume push notifications. (#283)
 - WhatsApp connectivity: update `whatsmeow` for the current WhatsApp protocol and fix `405 (Client Outdated)` failures. (#280)
+- Channels: report local cache persistence failures instead of silently returning incomplete success. (thanks @vincentkoc)
+- Cleanup: reject non-positive `chats cleanup --days` values before opening the store. (thanks @vincentkoc)
 
 ## 0.11.1 - 2026-06-11
 
