@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.3 - Unreleased
+
+### Added
+
+### Security
+
+### Fixed
+
 ## 0.11.2 - 2026-07-02
 
 ### Added
