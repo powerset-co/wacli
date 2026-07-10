@@ -11,12 +11,12 @@ import {
   assertExactInventory,
   assertGoBuildInfo,
   assertNoReleaseCredentials,
+  assertRuntimeVersion,
   parseCliArgs,
   releaseArchiveTarget,
   releaseManifestDigest,
   releaseAssetNames,
   runCommand,
-  sanitizedExecutionEnv,
   verifyChecksums,
   verifyDarwinSignature,
   versionFromTag,
@@ -59,17 +59,6 @@ function assertDownloadedAssetMetadata(candidateDir, metadata) {
     if (stat.size !== asset.size) {
       throw new Error(`${asset.name} size mismatch: expected ${asset.size}, got ${stat.size}`);
     }
-  }
-}
-
-function assertVersionCommand(binary, version, run) {
-  const result = run(binary, ["--version"], {
-    env: sanitizedExecutionEnv(),
-    cwd: path.dirname(binary),
-  });
-  const output = combinedOutput(result).trim();
-  if (output !== `wacli ${version}`) {
-    throw new Error(`${path.basename(binary)} --version returned ${JSON.stringify(output)}`);
   }
 }
 
@@ -170,9 +159,9 @@ export function verifyCandidateDirectory(options) {
     verifyDarwinSignature(darwinUniversal, { run, arch: "x86_64" });
     verifyDarwinSignature(darwinUniversal, { run, arch: "arm64" });
 
-    if (hostArch === "arm64") assertVersionCommand(darwinArm64, version, run);
-    else assertVersionCommand(darwinAmd64, version, run);
-    assertVersionCommand(darwinUniversal, version, run);
+    const hostThin = hostArch === "x86_64" ? darwinAmd64 : darwinArm64;
+    assertRuntimeVersion(hostThin, version, { run });
+    assertRuntimeVersion(darwinUniversal, version, { run });
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

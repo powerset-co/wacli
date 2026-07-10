@@ -8,6 +8,7 @@
 
 - Build: require Go 1.25.12 and gate source plus release binaries with `govulncheck` so reachable GO-2026-5856 standard-library paths are excluded.
 - Release: sign all official macOS thin and universal binaries with the exact OpenClaw Foundation Developer ID metadata and designated requirement, hardened runtime, timestamp, and Apple notarization before draft upload; require naturally quarantined clean-VM execution as the standalone CLI Gatekeeper proof.
+- Release: bind cross-build provenance and publication freshness to the current protected head, reject wrong linker/runtime versions and lookalike signing authorities, revalidate the exact draft and fresh published release by ID, and verify protected Homebrew handoff, formula stanzas, plus the installed binary's hash, architecture, signing identity, runtime, and notarization constraint.
 
 ### Fixed
 

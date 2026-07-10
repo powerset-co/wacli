@@ -66,6 +66,9 @@ export function collectCrossPlatformAssets({
         commit,
         expectedGoos: target.goos,
         expectedGoarch: target.goarch,
+        verifyRuntimeVersion:
+          target.goos === process.platform &&
+          target.goarch === (process.arch === "x64" ? "amd64" : process.arch),
       });
       run(process.execPath, [path.join(scriptDir, "govulncheck-stdlib.mjs"), "binary", binary], {
         cwd: repoRoot,

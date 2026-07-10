@@ -6,6 +6,7 @@ builds:
   - id: wacli_linux_amd64
     main: ./cmd/wacli
     binary: wacli
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=1
       - CGO_CFLAGS=-Wno-error=missing-braces
@@ -14,7 +15,7 @@ builds:
     tags:
       - sqlite_fts5
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.releaseLinkerSetting=wacli-release-linker-version=[{{.Version}}]
+      - -w -X main.version={{.Version}} -X main.releaseLinkerSetting=wacli-release-linker-version=[{{.Version}}]
     goos:
       - linux
     goarch:
@@ -23,6 +24,7 @@ builds:
   - id: wacli_linux_arm64
     main: ./cmd/wacli
     binary: wacli
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=1
       - CC=aarch64-linux-gnu-gcc
@@ -32,7 +34,7 @@ builds:
     tags:
       - sqlite_fts5
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.releaseLinkerSetting=wacli-release-linker-version=[{{.Version}}]
+      - -w -X main.version={{.Version}} -X main.releaseLinkerSetting=wacli-release-linker-version=[{{.Version}}]
     goos:
       - linux
     goarch:
@@ -41,6 +43,7 @@ builds:
   - id: wacli_windows_amd64
     main: ./cmd/wacli
     binary: wacli
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=1
       - CC=x86_64-w64-mingw32-gcc
@@ -50,7 +53,7 @@ builds:
     tags:
       - sqlite_fts5
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.releaseLinkerSetting=wacli-release-linker-version=[{{.Version}}]
+      - -w -X main.version={{.Version}} -X main.releaseLinkerSetting=wacli-release-linker-version=[{{.Version}}]
     goos:
       - windows
     goarch:

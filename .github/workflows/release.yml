@@ -69,7 +69,7 @@ jobs:
           fi
           test "$(git -C source rev-parse HEAD)" = "$RELEASE_COMMIT"
           grep -qx 'go 1.25.12' source/go.mod
-          grep -q "var version = \"${RELEASE_VERSION}\"" source/cmd/wacli/root.go
+          grep -q "const sourceVersion = \"${RELEASE_VERSION}\"" source/cmd/wacli/root.go
           grep -Eq "^## ${RELEASE_VERSION} - [0-9]{4}-[0-9]{2}-[0-9]{2}$" source/CHANGELOG.md
 
       - name: Setup Node
@@ -103,13 +103,36 @@ jobs:
           git -C source -c tag.gpgSign=false tag "v${RELEASE_VERSION}"
           mkdir -m 700 "$RUNNER_TEMP/build-home"
           cd source
-          env -i \
-            CGO_ENABLED=1 \
-            GOTOOLCHAIN=local \
-            HOME="$RUNNER_TEMP/build-home" \
-            PATH="$PATH" \
-            TMPDIR="$RUNNER_TEMP" \
-            goreleaser release --clean --skip=publish --config .goreleaser-linux-windows.yaml
+          for pass in 1 2; do
+            pass_root="$RUNNER_TEMP/cross-repro-$pass"
+            mkdir -m 700 "$pass_root"
+            mkdir -m 700 "$pass_root/home" "$pass_root/gomodcache" "$pass_root/gocache" "$pass_root/tmp"
+            env -i \
+              CGO_ENABLED=1 \
+              GOCACHE="$pass_root/gocache" \
+              GOMODCACHE="$pass_root/gomodcache" \
+              GOTOOLCHAIN=local \
+              HOME="$pass_root/home" \
+              PATH="$PATH" \
+              TMPDIR="$pass_root/tmp" \
+              goreleaser release --clean --skip=publish --config .goreleaser-linux-windows.yaml
+            mv dist "$pass_root/dist"
+          done
+
+          cross_files=(
+            "wacli_linux_amd64_linux_amd64_v1/wacli"
+            "wacli_linux_arm64_linux_arm64_v8.0/wacli"
+            "wacli_windows_amd64_windows_amd64_v1/wacli.exe"
+            "wacli_${RELEASE_VERSION}_linux_amd64.tar.gz"
+            "wacli_${RELEASE_VERSION}_linux_arm64.tar.gz"
+            "wacli_${RELEASE_VERSION}_windows_amd64.zip"
+            "checksums.txt"
+          )
+          for file in "${cross_files[@]}"; do
+            cmp "$RUNNER_TEMP/cross-repro-1/dist/$file" "$RUNNER_TEMP/cross-repro-2/dist/$file"
+          done
+          mv "$RUNNER_TEMP/cross-repro-1/dist" dist
+          echo "REPRODUCIBLE_CROSS_PLATFORM version=$RELEASE_VERSION files=${#cross_files[@]}"
 
       - name: Collect exact cross-platform assets with protected tooling
         env:

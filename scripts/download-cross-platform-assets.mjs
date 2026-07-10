@@ -60,6 +60,9 @@ export function validateCrossPlatformControlPlane({
   ) {
     throw new Error("cross-platform workflow ref is not a protected default branch");
   }
+  if (protectedBranch.commit.sha !== workflowSha) {
+    throw new Error("cross-platform workflow proof is stale relative to protected default-branch head");
+  }
   if (
     !Number.isInteger(workflow.id) ||
     workflow.id <= 0 ||
@@ -219,6 +222,9 @@ export function validateAuthenticatedCrossPlatformDirectory({
   }
   assertCommit(authenticated.workflow_sha);
   assertCommit(authenticated.protected_branch_head);
+  if (authenticated.workflow_sha !== authenticated.protected_branch_head) {
+    throw new Error("authenticated cross-platform workflow SHA is not the protected branch head");
+  }
   sha256FromDigest(authenticated.artifact_digest, "authenticated artifact digest");
   if (!/^[0-9a-f]{64}$/.test(authenticated.provenance_sha256)) {
     throw new Error("authenticated provenance digest is invalid");

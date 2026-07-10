@@ -19,9 +19,11 @@ import {
   RELEASE_IDENTIFIER,
   RELEASE_REPOSITORY,
   archiveNames,
+  assertArchiveContents,
   assertCommit,
   assertExactInventory,
   assertNoReleaseCredentials,
+  assertRuntimeVersion,
   parseChecksums,
   parseCliArgs,
   releaseAssetNames,
@@ -60,7 +62,7 @@ function assertReleaseSource(version, commit, run) {
   const goMod = fs.readFileSync(path.join(repoRoot, "go.mod"), "utf8");
   if (!/^go 1\.25\.12$/m.test(goMod)) throw new Error("go.mod must require exact Go 1.25.12");
   const rootSource = fs.readFileSync(path.join(repoRoot, "cmd/wacli/root.go"), "utf8");
-  if (!rootSource.includes(`var version = \"${version}\"`)) {
+  if (!rootSource.includes(`const sourceVersion = \"${version}\"`)) {
     throw new Error(`cmd/wacli/root.go does not default to ${version}`);
   }
   const changelog = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
@@ -75,7 +77,8 @@ function buildDarwinBinary({ arch, version, output, run, buildEnv }) {
     ...buildEnv,
     CGO_CFLAGS: `${buildEnv.CGO_CFLAGS ?? ""} -arch ${clangArch} -Wno-error=missing-braces`.trim(),
     CGO_ENABLED: "1",
-    CGO_LDFLAGS: `${buildEnv.CGO_LDFLAGS ?? ""} -arch ${clangArch}`.trim(),
+    CGO_LDFLAGS:
+      `${buildEnv.CGO_LDFLAGS ?? ""} -arch ${clangArch} -Wl,-no_fixup_chains`.trim(),
     GOARCH: arch,
     GOOS: "darwin",
   };
@@ -87,7 +90,7 @@ function buildDarwinBinary({ arch, version, output, run, buildEnv }) {
       "-tags",
       "sqlite_fts5",
       "-ldflags",
-      `-s -w -X main.version=${version} ` +
+      `-w -X main.version=${version} ` +
         `-X main.releaseLinkerSetting=wacli-release-linker-version=[${version}]`,
       "-o",
       output,
@@ -531,6 +534,27 @@ export function verifyGitHubSignedReleaseTag({ tag, commit, run = runCommand }) 
 
 const releaseVerifyWorkflowPath = ".github/workflows/release-verify.yml";
 
+export function validateReleaseProtectedHead(
+  repository,
+  protectedBranch,
+  expectedHead,
+  label = "verifier head",
+) {
+  assertCommit(expectedHead);
+  const defaultBranch = repository.default_branch;
+  if (repository.full_name !== RELEASE_REPOSITORY || !defaultBranch) {
+    throw new Error("could not authenticate the release repository default branch");
+  }
+  if (
+    protectedBranch.name !== defaultBranch ||
+    protectedBranch.protected !== true ||
+    protectedBranch.commit?.sha !== expectedHead
+  ) {
+    throw new Error(`${label} is not the current protected default-branch commit`);
+  }
+  return expectedHead;
+}
+
 export function validateVerifierRun({
   repository,
   protectedBranch,
@@ -541,16 +565,7 @@ export function validateVerifierRun({
 }) {
   assertCommit(verifierHead);
   const defaultBranch = repository.default_branch;
-  if (repository.full_name !== RELEASE_REPOSITORY || !defaultBranch) {
-    throw new Error("could not authenticate the release repository default branch");
-  }
-  if (
-    protectedBranch.name !== defaultBranch ||
-    protectedBranch.protected !== true ||
-    protectedBranch.commit?.sha !== verifierHead
-  ) {
-    throw new Error("verifier head is not the current protected default-branch commit");
-  }
+  validateReleaseProtectedHead(repository, protectedBranch, verifierHead);
   if (
     !Number.isInteger(workflow.id) ||
     workflow.id <= 0 ||
@@ -608,6 +623,9 @@ export function validateVerifierJobs(jobs) {
 
 export function publishDraftRelease(options) {
   const run = options.run ?? runCommand;
+  const verifyTag =
+    options.verifyTag ??
+    (() => verifyGitHubSignedReleaseTag({ tag: options.tag, commit: options.commit, run }));
   const version = versionFromTag(options.tag);
   assertCommit(options.commit);
   if (options.confirm !== options.tag) throw new Error("--confirm-publish must exactly match --tag");
@@ -622,9 +640,7 @@ export function publishDraftRelease(options) {
   if (!Number.isInteger(releaseId) || releaseId <= 0) throw new Error("invalid release ID");
   if (!Number.isInteger(verifierRun) || verifierRun <= 0) throw new Error("invalid verifier run ID");
 
-  const release = JSON.parse(
-    run("gh", ["api", "--method", "GET", `/repos/${RELEASE_REPOSITORY}/releases/${releaseId}`]).stdout,
-  );
+  const release = readReleaseById(releaseId, run);
   const expectedBody = releaseNotesForCommit(options.tag, options.commit, run);
   validateDraftMetadata(release, {
     releaseId,
@@ -634,9 +650,7 @@ export function publishDraftRelease(options) {
     expectedBody,
   });
 
-  const repository = JSON.parse(
-    run("gh", ["api", "--method", "GET", `/repos/${RELEASE_REPOSITORY}`]).stdout,
-  );
+  const repository = readReleaseRepository(run);
   const workflow = JSON.parse(
     run("gh", [
       "api",
@@ -645,14 +659,7 @@ export function publishDraftRelease(options) {
       `/repos/${RELEASE_REPOSITORY}/actions/workflows/release-verify.yml`,
     ]).stdout,
   );
-  const protectedBranch = JSON.parse(
-    run("gh", [
-      "api",
-      "--method",
-      "GET",
-      `/repos/${RELEASE_REPOSITORY}/branches/${encodeURIComponent(repository.default_branch)}`,
-    ]).stdout,
-  );
+  const protectedBranch = readReleaseBranch(repository.default_branch, run);
   const workflowRun = JSON.parse(
     run("gh", [
       "api",
@@ -707,11 +714,34 @@ export function publishDraftRelease(options) {
     }
   }
 
-  const tagObjectSha = verifyGitHubSignedReleaseTag({
+  const tagObjectSha = verifyTag();
+
+  const latestDraft = readReleaseById(releaseId, run);
+  const latestAssets = validateDraftMetadata(latestDraft, {
+    releaseId,
     tag: options.tag,
     commit: options.commit,
-    run,
+    version,
+    expectedBody,
   });
+  const latestManifestDigest = releaseManifestDigest({
+    release_id: releaseId,
+    tag: options.tag,
+    commit: options.commit,
+    assets: latestAssets,
+  });
+  if (latestManifestDigest !== manifestDigest) {
+    throw new Error("draft release manifest changed after native verification");
+  }
+
+  const prePublishRepository = readReleaseRepository(run);
+  const prePublishBranch = readReleaseBranch(prePublishRepository.default_branch, run);
+  validateReleaseProtectedHead(
+    prePublishRepository,
+    prePublishBranch,
+    options.verifierHead,
+    "pre-publication head",
+  );
 
   const published = JSON.parse(
     run("gh", [
@@ -723,14 +753,50 @@ export function publishDraftRelease(options) {
       "draft=false",
     ]).stdout,
   );
-  if (
-    published.draft !== false ||
-    published.tag_name !== options.tag ||
-    published.target_commitish !== options.commit
-  ) {
-    throw new Error("GitHub did not publish the exact verified release");
+  const publishedAssets = validatePublishedReleaseMetadata(published, {
+    releaseId,
+    tag: options.tag,
+    commit: options.commit,
+    version,
+    expectedBody,
+  });
+  const publishedManifestDigest = releaseManifestDigest({
+    release_id: releaseId,
+    tag: options.tag,
+    commit: options.commit,
+    assets: publishedAssets,
+  });
+  if (publishedManifestDigest !== manifestDigest) {
+    throw new Error("published release manifest differs from the verified draft manifest");
   }
-  verifyGitHubSignedReleaseTag({ tag: options.tag, commit: options.commit, run });
+
+  const freshPublished = readReleaseById(releaseId, run);
+  const freshPublishedAssets = validatePublishedReleaseMetadata(freshPublished, {
+    releaseId,
+    tag: options.tag,
+    commit: options.commit,
+    version,
+    expectedBody,
+  });
+  const freshPublishedManifestDigest = releaseManifestDigest({
+    release_id: releaseId,
+    tag: options.tag,
+    commit: options.commit,
+    assets: freshPublishedAssets,
+  });
+  if (freshPublishedManifestDigest !== manifestDigest) {
+    throw new Error("fresh published release differs from the verified draft manifest");
+  }
+
+  const postPublishRepository = readReleaseRepository(run);
+  const postPublishBranch = readReleaseBranch(postPublishRepository.default_branch, run);
+  validateReleaseProtectedHead(
+    postPublishRepository,
+    postPublishBranch,
+    options.verifierHead,
+    "post-publication head",
+  );
+  verifyTag();
   process.stdout.write(`Published ${options.tag} with signed tag object ${tagObjectSha}\n`);
 }
 
@@ -760,17 +826,55 @@ export function validateHomebrewRelease(
   return { assets, manifestDigest: actualManifest };
 }
 
-function downloadAndVerifyHomebrewAssets({ assets, version, downloadAsset = downloadReleaseAsset }) {
+function homebrewHostTarget(platform = process.platform, architecture = process.arch) {
+  if (platform !== "darwin") {
+    throw new Error("Homebrew release closeout requires a macOS host for Developer ID verification");
+  }
+  if (architecture === "arm64") {
+    return { target: "darwin_arm64", lipoArch: "arm64" };
+  }
+  if (architecture === "x64") {
+    return { target: "darwin_amd64", lipoArch: "x86_64" };
+  }
+  throw new Error(`unsupported Homebrew verification architecture ${architecture}`);
+}
+
+function downloadAndVerifyHomebrewAssets({
+  assets,
+  version,
+  downloadAsset = downloadReleaseAsset,
+  run = runCommand,
+  platform = process.platform,
+  architecture = process.arch,
+}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "wacli-homebrew-release-"));
   try {
     for (const name of releaseAssetNames(version)) {
       downloadAsset(assets.find((asset) => asset.name === name), directory);
     }
     verifyChecksums(directory, version);
-    return parseChecksums(
+    const checksums = parseChecksums(
       fs.readFileSync(path.join(directory, "checksums.txt"), "utf8"),
       archiveNames(version),
     );
+    const hostTarget = homebrewHostTarget(platform, architecture);
+    const archiveName = `wacli_${version}_${hostTarget.target}.tar.gz`;
+    const archive = path.join(directory, archiveName);
+    assertArchiveContents(archive, "wacli", { run });
+    const extraction = fs.mkdtempSync(path.join(directory, ".host-binary-"));
+    try {
+      run("tar", ["-xzf", archive, "-C", extraction, "wacli"]);
+      return {
+        checksums,
+        installedBinary: {
+          archiveName,
+          lipoArch: hostTarget.lipoArch,
+          sha256: sha256File(path.join(extraction, "wacli")),
+        },
+      };
+    } finally {
+      fs.rmSync(extraction, { recursive: true, force: true });
+    }
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -786,34 +890,137 @@ export function validateHomebrewFormula(formula, { tag, checksums }) {
     throw new Error("Homebrew formula version mismatch");
   }
   const targets = ["darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64"];
-  const expectedUrls = targets.map(
-    (target) =>
-      `https://github.com/${RELEASE_REPOSITORY}/releases/download/${tag}/` +
-      `wacli_${version}_${target}.tar.gz`,
-  );
-  const urlChecksums = new Map();
-  for (const match of String(formula).matchAll(/^\s*url "([^"]+)"\r?\n\s*sha256 "([0-9a-f]{64})"\s*$/gm)) {
-    if (urlChecksums.has(match[1])) throw new Error(`duplicate Homebrew formula URL ${match[1]}`);
-    urlChecksums.set(match[1], match[2]);
+  const stanzas = new Map();
+  let currentOs = null;
+  let currentArch = null;
+  const stanzaKey = () => (currentOs && currentArch ? `${currentOs}_${currentArch}` : null);
+  const requireCompleteStanza = () => {
+    const key = stanzaKey();
+    const stanza = key ? stanzas.get(key) : null;
+    if (!stanza?.url || !stanza?.sha256) {
+      throw new Error(`incomplete Homebrew formula target stanza ${key ?? "unknown"}`);
+    }
+  };
+
+  for (const rawLine of String(formula).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "on_macos do" || line === "on_linux do") {
+      if (currentOs || currentArch) throw new Error("nested Homebrew operating-system stanza");
+      currentOs = line === "on_macos do" ? "darwin" : "linux";
+      continue;
+    }
+    const cpuPredicates =
+      currentOs === "darwin"
+        ? new Map([
+            ["if Hardware::CPU.arm?", "arm64"],
+            ["if Hardware::CPU.intel?", "amd64"],
+          ])
+        : currentOs === "linux"
+          ? new Map([
+              ["if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?", "arm64"],
+              ["if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?", "amd64"],
+            ])
+          : null;
+    const predicateArch = cpuPredicates?.get(line);
+    if (predicateArch) {
+      if (currentArch) throw new Error("nested Homebrew CPU stanza");
+      currentArch = predicateArch;
+      continue;
+    }
+    if (/^if Hardware::CPU\./.test(line)) {
+      throw new Error(`unsupported Homebrew CPU predicate for ${currentOs ?? "unknown"}: ${line}`);
+    }
+    if (line === "end" && currentArch) {
+      requireCompleteStanza();
+      currentArch = null;
+      continue;
+    }
+    if (line === "end" && currentOs) {
+      currentOs = null;
+      continue;
+    }
+    if (currentOs && /^(?:if|unless|else|elsif|case|when|begin|rescue|ensure|for|while)\b/.test(line)) {
+      throw new Error(`unsupported Homebrew target stanza structure: ${line}`);
+    }
+
+    const url = /^url "([^"]+)"$/.exec(line);
+    if (url) {
+      const key = stanzaKey();
+      if (!key) throw new Error("Homebrew formula URL is outside an OS/CPU stanza");
+      if (stanzas.has(key)) throw new Error(`duplicate Homebrew formula target stanza ${key}`);
+      stanzas.set(key, { url: url[1], sha256: null });
+      continue;
+    }
+    const sha256 = /^sha256 "([0-9a-f]{64})"$/.exec(line);
+    if (sha256) {
+      const key = stanzaKey();
+      const stanza = key ? stanzas.get(key) : null;
+      if (!stanza || stanza.sha256) {
+        throw new Error(`misplaced Homebrew formula checksum in ${key ?? "unknown"}`);
+      }
+      stanza.sha256 = sha256[1];
+      continue;
+    }
+    if (/^(?:url|sha256)\b/.test(line)) {
+      throw new Error(`malformed Homebrew formula target line: ${line}`);
+    }
   }
-  assertExactInventory(urlChecksums.keys(), expectedUrls, "Homebrew formula URL");
+
+  if (currentOs || currentArch) throw new Error("unterminated Homebrew target stanza");
+  assertExactInventory(stanzas.keys(), targets, "Homebrew formula target stanza");
   for (const target of targets) {
     const name = `wacli_${version}_${target}.tar.gz`;
     const url = `https://github.com/${RELEASE_REPOSITORY}/releases/download/${tag}/${name}`;
-    if (urlChecksums.get(url) !== checksums.get(name)) {
-      throw new Error(`Homebrew formula checksum mismatch for ${name}`);
+    const stanza = stanzas.get(target);
+    if (stanza.url !== url) {
+      throw new Error(`Homebrew formula URL mismatch for ${target}`);
+    }
+    if (stanza.sha256 !== checksums.get(name)) {
+      throw new Error(`Homebrew formula checksum mismatch for ${target}`);
     }
   }
 }
 
-export function validateHomebrewRun({ repository, branch, workflow, workflowRun, runId }) {
+export function verifyHomebrewInstalledBinary({
+  binary,
+  version,
+  expectedSha256,
+  expectedArch,
+  run = runCommand,
+  env = sanitizedExecutionEnv(),
+}) {
+  if (!/^[0-9a-f]{64}$/.test(String(expectedSha256 ?? ""))) {
+    throw new Error("installed Homebrew binary requires an exact expected SHA-256");
+  }
+  if (!fs.statSync(binary).isFile() || sha256File(binary) !== expectedSha256) {
+    throw new Error("installed Homebrew binary hash does not match the verified release archive");
+  }
+  assertNoReleaseCredentials(env);
+  const architectures = run("lipo", ["-archs", binary], { env }).stdout.trim().split(/\s+/).filter(Boolean);
+  assertExactInventory(architectures, [expectedArch], "installed Homebrew binary architecture");
+  const cleanRun = (command, args, options = {}) => run(command, args, { ...options, env });
+  verifyDarwinSignature(binary, { run: cleanRun });
+  assertRuntimeVersion(binary, version, { run, env });
+}
+
+export function validateHomebrewBranch(repository, branch, label = "Homebrew default branch") {
   const defaultBranch = repository.default_branch;
   if (repository.full_name !== homebrewRepository || !defaultBranch) {
     throw new Error("Homebrew repository identity mismatch");
   }
-  if (branch.name !== defaultBranch || !/^[0-9a-f]{40}$/.test(String(branch.commit?.sha ?? ""))) {
-    throw new Error("Homebrew default-branch head mismatch");
+  if (
+    branch.name !== defaultBranch ||
+    branch.protected !== true ||
+    !/^[0-9a-f]{40}$/.test(String(branch.commit?.sha ?? ""))
+  ) {
+    throw new Error(`${label} is not the protected default-branch head`);
   }
+  return branch.commit.sha;
+}
+
+export function validateHomebrewRun({ repository, branch, workflow, workflowRun, runId }) {
+  const defaultBranch = repository.default_branch;
+  const branchHead = validateHomebrewBranch(repository, branch);
   if (
     !Number.isInteger(workflow.id) ||
     workflow.id <= 0 ||
@@ -830,7 +1037,7 @@ export function validateHomebrewRun({ repository, branch, workflow, workflowRun,
     workflowRun.status !== "completed" ||
     workflowRun.conclusion !== "success" ||
     workflowRun.head_branch !== defaultBranch ||
-    workflowRun.head_sha !== branch.commit.sha ||
+    workflowRun.head_sha !== branchHead ||
     workflowRun.head_repository?.full_name !== homebrewRepository
   ) {
     throw new Error("Homebrew run is not the exact authenticated handoff workflow dispatch");
@@ -844,6 +1051,23 @@ function readReleaseById(releaseId, run) {
       "--method",
       "GET",
       `/repos/${RELEASE_REPOSITORY}/releases/${releaseId}`,
+    ]).stdout,
+  );
+}
+
+function readReleaseRepository(run) {
+  return JSON.parse(
+    run("gh", ["api", "--method", "GET", `/repos/${RELEASE_REPOSITORY}`]).stdout,
+  );
+}
+
+function readReleaseBranch(defaultBranch, run) {
+  return JSON.parse(
+    run("gh", [
+      "api",
+      "--method",
+      "GET",
+      `/repos/${RELEASE_REPOSITORY}/branches/${encodeURIComponent(defaultBranch)}`,
     ]).stdout,
   );
 }
@@ -868,7 +1092,12 @@ export function dispatchHomebrewHandoff(options) {
   if (options.cleanConfirm !== options.tag) {
     throw new Error("--confirm-clean-homebrew-host must exactly match --tag on a host without wacli installed");
   }
-  const installed = run("brew", ["list", "--versions", "wacli"], { allowFailure: true });
+  const executionEnv = sanitizedExecutionEnv();
+  assertNoReleaseCredentials(executionEnv);
+  const installed = run("brew", ["list", "--versions", "wacli"], {
+    allowFailure: true,
+    env: executionEnv,
+  });
   if (installed.status === 0 || installed.stdout.trim()) {
     throw new Error("Homebrew clean-install gate requires wacli to be absent");
   }
@@ -888,10 +1117,13 @@ export function dispatchHomebrewHandoff(options) {
     commit: options.commit,
     run,
   });
-  const checksums = downloadAndVerifyHomebrewAssets({
+  const downloadedAssets = downloadAndVerifyHomebrewAssets({
     assets: validated.assets,
     version,
     downloadAsset: options.downloadAsset,
+    run,
+    platform: options.platform,
+    architecture: options.architecture,
   });
 
   const repository = JSON.parse(
@@ -906,10 +1138,8 @@ export function dispatchHomebrewHandoff(options) {
     ]).stdout,
   );
   const branch = readHomebrewBranch(repository.default_branch, run);
+  const branchHead = validateHomebrewBranch(repository, branch);
   if (
-    repository.full_name !== homebrewRepository ||
-    branch.name !== repository.default_branch ||
-    !/^[0-9a-f]{40}$/.test(String(branch.commit?.sha ?? "")) ||
     !Number.isInteger(workflow.id) ||
     workflow.path !== homebrewWorkflowPath ||
     workflow.state !== "active"
@@ -959,7 +1189,7 @@ export function dispatchHomebrewHandoff(options) {
         candidate.display_title === expectedTitle &&
         Number(candidate.workflow_id) === workflow.id &&
         candidate.path === homebrewWorkflowPath &&
-        candidate.head_sha === branch.commit.sha,
+        candidate.head_sha === branchHead,
     );
     if (matches.length > 1) throw new Error(`ambiguous Homebrew handoff run ${expectedTitle}`);
     runId = matches[0]?.id ?? null;
@@ -988,16 +1218,21 @@ export function dispatchHomebrewHandoff(options) {
   validateHomebrewRun({ repository, branch, workflow, workflowRun, runId });
 
   const updatedBranch = readHomebrewBranch(repository.default_branch, run);
-  if (updatedBranch.commit?.sha !== branch.commit.sha) {
+  const updatedBranchHead = validateHomebrewBranch(
+    repository,
+    updatedBranch,
+    "Homebrew post-workflow default branch",
+  );
+  if (updatedBranchHead !== branchHead) {
     const comparison = JSON.parse(
       run("gh", [
         "api",
         "--method",
         "GET",
-        `/repos/${homebrewRepository}/compare/${branch.commit.sha}...${updatedBranch.commit?.sha}`,
+        `/repos/${homebrewRepository}/compare/${branchHead}...${updatedBranchHead}`,
       ]).stdout,
     );
-    if (comparison.status !== "ahead" || comparison.merge_base_commit?.sha !== branch.commit.sha) {
+    if (comparison.status !== "ahead" || comparison.merge_base_commit?.sha !== branchHead) {
       throw new Error("Homebrew default branch did not advance from the authenticated workflow head");
     }
   }
@@ -1007,9 +1242,9 @@ export function dispatchHomebrewHandoff(options) {
     "GET",
     "--header",
     "Accept: application/vnd.github.raw+json",
-    `/repos/${homebrewRepository}/contents/${homebrewFormulaPath}?ref=${updatedBranch.commit?.sha}`,
+    `/repos/${homebrewRepository}/contents/${homebrewFormulaPath}?ref=${updatedBranchHead}`,
   ]).stdout;
-  validateHomebrewFormula(formula, { tag: options.tag, checksums });
+  validateHomebrewFormula(formula, { tag: options.tag, checksums: downloadedAssets.checksums });
 
   const finalRelease = readReleaseById(releaseId, run);
   validateHomebrewRelease(finalRelease, {
@@ -1022,17 +1257,24 @@ export function dispatchHomebrewHandoff(options) {
   });
   verifyGitHubSignedReleaseTag({ tag: options.tag, commit: options.commit, run });
 
-  run("brew", ["tap", "openclaw/tap"]);
-  run("brew", ["update"]);
-  const localFormula = run("brew", ["cat", "openclaw/tap/wacli"]).stdout;
-  validateHomebrewFormula(localFormula, { tag: options.tag, checksums });
-  run("brew", ["install", "--formula", "openclaw/tap/wacli"]);
-  run("brew", ["test", "openclaw/tap/wacli"], { env: sanitizedExecutionEnv() });
-  const prefix = run("brew", ["--prefix", "wacli"]).stdout.trim();
-  const versionOutput = run(path.join(prefix, "bin", "wacli"), ["--version"], {
-    env: sanitizedExecutionEnv(),
-  }).stdout.trim();
-  if (versionOutput !== `wacli ${version}`) throw new Error("clean Homebrew install version mismatch");
+  run("brew", ["tap", "openclaw/tap"], { env: executionEnv });
+  run("brew", ["update"], { env: executionEnv });
+  const localFormula = run("brew", ["cat", "openclaw/tap/wacli"], { env: executionEnv }).stdout;
+  validateHomebrewFormula(localFormula, {
+    tag: options.tag,
+    checksums: downloadedAssets.checksums,
+  });
+  run("brew", ["install", "--formula", "openclaw/tap/wacli"], { env: executionEnv });
+  const prefix = run("brew", ["--prefix", "wacli"], { env: executionEnv }).stdout.trim();
+  verifyHomebrewInstalledBinary({
+    binary: path.join(prefix, "bin", "wacli"),
+    version,
+    expectedSha256: downloadedAssets.installedBinary.sha256,
+    expectedArch: downloadedAssets.installedBinary.lipoArch,
+    run,
+    env: executionEnv,
+  });
+  run("brew", ["test", "openclaw/tap/wacli"], { env: executionEnv });
   process.stdout.write(
     `HOMEBREW_VERIFIED release_id=${releaseId} tag=${options.tag} commit=${options.commit} ` +
       `manifest_sha256=${options.manifestDigest} tag_object=${tagObjectSha} run_id=${runId}\n`,

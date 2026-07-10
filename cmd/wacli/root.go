@@ -15,14 +15,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.12.1"
+const sourceVersion = "0.12.1"
+
+var version string
 
 const releaseLinkerSettingPrefix = "wacli-release-linker-version=["
 
 var releaseLinkerSetting string
 
 func effectiveVersion() string {
-	if releaseLinkerSetting == "" || releaseLinkerSetting == releaseLinkerSettingPrefix+version+"]" {
+	if version == "" && releaseLinkerSetting == "" {
+		return sourceVersion
+	}
+	// Source/HEAD package builds historically set only main.version. Official
+	// release artifacts additionally require the marker during verification.
+	if version != "" && releaseLinkerSetting == "" {
+		return version
+	}
+	if version != "" && releaseLinkerSetting == releaseLinkerSettingPrefix+version+"]" {
 		return version
 	}
 	return "invalid-release-linker-version"

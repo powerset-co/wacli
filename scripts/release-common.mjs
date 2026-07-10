@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 export const RELEASE_REPOSITORY = "openclaw/wacli";
 export const RELEASE_GO_VERSION = "go1.25.12";
@@ -10,9 +11,12 @@ export const RELEASE_GO_TOOLCHAIN = "go1.25.12";
 export const RELEASE_GOVULNCHECK_VERSION = "v1.5.0";
 export const RELEASE_IDENTIFIER = "org.openclaw.wacli";
 export const RELEASE_TEAM_ID = "FWJYW4S8P8";
+export const RELEASE_AUTHORITY = `Developer ID Application: OpenClaw Foundation (${RELEASE_TEAM_ID})`;
 export const RELEASE_DESIGNATED_REQUIREMENT =
   `designated => identifier "${RELEASE_IDENTIFIER}" and anchor apple generic ` +
   `and certificate leaf[subject.OU] = "${RELEASE_TEAM_ID}"`;
+
+const repositoryRoot = path.dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
 
 const credentialNames = [
   "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
@@ -184,11 +188,8 @@ export function assertCodeSignatureIdentity(displayText, requirementText) {
   const applicationAuthorities = authorities.filter((authority) =>
     authority.startsWith("Developer ID Application:"),
   );
-  if (
-    applicationAuthorities.length !== 1 ||
-    !applicationAuthorities[0].endsWith(`(${RELEASE_TEAM_ID})`)
-  ) {
-    throw new Error("signature is not exactly one Foundation Team Developer ID Application authority");
+  if (applicationAuthorities.length !== 1 || applicationAuthorities[0] !== RELEASE_AUTHORITY) {
+    throw new Error(`signature authority is not exactly ${RELEASE_AUTHORITY}`);
   }
   if (!/\bflags=0x[0-9a-f]+\(runtime\)/i.test(displayText)) {
     throw new Error("signature is missing hardened runtime");
@@ -269,6 +270,37 @@ export function assertArchiveContents(archive, expectedBinary, options = {}) {
   assertExactInventory(names, ["LICENSE", "README.md", expectedBinary], "archive entry");
 }
 
+export function inspectLinkedReleaseVersion(binary, options = {}) {
+  const run = options.run ?? runCommand;
+  const env = sanitizedExecutionEnv(
+    { GOTOOLCHAIN: RELEASE_GO_TOOLCHAIN },
+    options.env ?? process.env,
+  );
+  assertNoReleaseCredentials(env);
+  const result = run(
+    "go",
+    ["run", "./scripts/release-version-inspector", path.resolve(binary)],
+    { cwd: repositoryRoot, env },
+  );
+  let inspected;
+  try {
+    inspected = JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${path.basename(binary)} has malformed linked release-version metadata`);
+  }
+  if (
+    !inspected ||
+    typeof inspected !== "object" ||
+    Array.isArray(inspected) ||
+    typeof inspected.version !== "string" ||
+    typeof inspected.releaseLinkerSetting !== "string" ||
+    Object.keys(inspected).sort().join(",") !== "releaseLinkerSetting,version"
+  ) {
+    throw new Error(`${path.basename(binary)} has malformed linked release-version metadata`);
+  }
+  return inspected;
+}
+
 export function assertGoBuildInfo(binary, version, options = {}) {
   const run = options.run ?? runCommand;
   assertCommit(options.commit);
@@ -312,17 +344,39 @@ export function assertGoBuildInfo(binary, version, options = {}) {
   if (settings.get("CGO_ENABLED") !== "1" || settings.get("-tags") !== "sqlite_fts5") {
     throw new Error(`${path.basename(binary)} is missing the exact cgo/sqlite_fts5 release settings`);
   }
-
-  const linkerVersions = [
-    ...fs
-      .readFileSync(binary)
-      .toString("latin1")
-      .matchAll(/wacli-release-linker-version=\[([0-9]+\.[0-9]+\.[0-9]+)\]/g),
-  ].map((match) => match[1]);
-  if (linkerVersions.length !== 1 || linkerVersions[0] !== version) {
+  if (settings.get("-trimpath") !== "true") {
+    throw new Error(`${path.basename(binary)} is missing the reproducible -trimpath release setting`);
+  }
+  const linked = inspectLinkedReleaseVersion(binary, { run, env: options.env });
+  if (linked.version !== version) {
     throw new Error(
-      `${path.basename(binary)} does not contain the one exact release linker setting for ${version}`,
+      `${path.basename(binary)} has linked runtime version ${JSON.stringify(linked.version)}, ` +
+        `not ${JSON.stringify(version)}`,
     );
+  }
+  const expectedLinkerSetting = `wacli-release-linker-version=[${version}]`;
+  if (linked.releaseLinkerSetting !== expectedLinkerSetting) {
+    throw new Error(
+      `${path.basename(binary)} has linked release marker ` +
+        `${JSON.stringify(linked.releaseLinkerSetting)}, not ${JSON.stringify(expectedLinkerSetting)}`,
+    );
+  }
+  if (options.verifyRuntimeVersion === true) {
+    assertRuntimeVersion(binary, version, { run, env: options.env });
+  }
+}
+
+export function assertRuntimeVersion(binary, version, options = {}) {
+  const run = options.run ?? runCommand;
+  const env = options.env ?? sanitizedExecutionEnv();
+  assertNoReleaseCredentials(env);
+  const result = run(binary, ["--version"], {
+    cwd: path.dirname(binary),
+    env,
+  });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  if (output !== `wacli ${version}`) {
+    throw new Error(`${path.basename(binary)} --version returned ${JSON.stringify(output)}`);
   }
 }
 
