@@ -40,7 +40,7 @@ func TestSyncSendsAvailablePresenceOnConnected(t *testing.T) {
 		t.Fatalf("missing connected line in stderr:\n%s", raw)
 	}
 
-	assertPresenceCalls(t, f, types.PresenceAvailable, types.PresenceUnavailable)
+	assertPresenceCalls(t, f, types.PresenceAvailable, types.PresenceAvailable, types.PresenceUnavailable)
 }
 
 // TestSyncSendsAvailablePresenceOnPushNameSetting ensures that once the
@@ -74,7 +74,99 @@ func TestSyncSendsAvailablePresenceOnPushNameSetting(t *testing.T) {
 		t.Fatalf("missing connected line in stderr:\n%s", raw)
 	}
 
-	assertPresenceCalls(t, f, types.PresenceAvailable, types.PresenceAvailable, types.PresenceUnavailable)
+	assertPresenceCalls(t, f, types.PresenceAvailable, types.PresenceAvailable, types.PresenceAvailable, types.PresenceUnavailable)
+}
+
+// TestSyncQuietPresenceModeSkipsAvailablePresence verifies the personal-mirror
+// mode does not mark the linked device globally available while sync is live,
+// including the lower-level authenticated-connect path, but still sends
+// unavailable on cleanup as a safe final state.
+func TestSyncQuietPresenceModeSkipsAvailablePresence(t *testing.T) {
+	tests := []struct {
+		name          string
+		connectEvents []interface{}
+	}{
+		{name: "connected only"},
+		{name: "push name", connectEvents: []interface{}{&events.PushNameSetting{}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newTestApp(t)
+			f := newFakeWA()
+			f.connectEvents = tt.connectEvents
+			a.wa = f
+
+			captureStderr(t, func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_, err := a.Sync(ctx, SyncOptions{
+					Mode:         SyncModeOnce,
+					AllowQR:      false,
+					IdleExit:     time.Millisecond,
+					WarnNoLimits: false,
+					PresenceMode: SyncPresenceModeQuiet,
+				})
+				if err != nil {
+					t.Fatalf("Sync: %v", err)
+				}
+			})
+
+			assertPresenceCalls(t, f, types.PresenceUnavailable)
+		})
+	}
+}
+
+func TestSyncQuietPresenceModeSkipsAvailablePresenceAfterReconnect(t *testing.T) {
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	reconnected := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				f.mu.Lock()
+				connectCalls := f.connectCalls
+				f.mu.Unlock()
+				if connectCalls >= 2 {
+					close(reconnected)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	captureStderr(t, func() {
+		_, err := a.Sync(ctx, SyncOptions{
+			Mode:         SyncModeFollow,
+			AllowQR:      false,
+			MaxReconnect: time.Second,
+			PresenceMode: SyncPresenceModeQuiet,
+			AfterConnect: func(context.Context) error {
+				f.emit(&events.StreamReplaced{})
+				return nil
+			},
+		})
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("Sync: %v", err)
+		}
+	})
+
+	select {
+	case <-reconnected:
+	default:
+		t.Fatal("expected StreamReplaced to trigger reconnect")
+	}
+	assertPresenceCalls(t, f, types.PresenceUnavailable)
 }
 
 // TestSyncPresenceFailureWarnsAndContinues verifies that a failed presence
@@ -101,7 +193,7 @@ func TestSyncPresenceFailureWarnsAndContinues(t *testing.T) {
 		}
 	})
 
-	waitForPresenceCalls(t, f, 2)
+	waitForPresenceCalls(t, f, 3)
 
 	if !strings.Contains(raw, "send_presence_failed") {
 		t.Fatalf("missing send_presence_failed warning event in stderr:\n%s", raw)
@@ -133,7 +225,7 @@ func TestSyncSendsAvailablePresenceOnConnectedIsSynchronous(t *testing.T) {
 		}
 	})
 
-	waitForPresenceCalls(t, f, 2)
+	waitForPresenceCalls(t, f, 3)
 }
 
 func assertPresenceCalls(t *testing.T, f *fakeWA, want ...types.Presence) {
@@ -198,8 +290,8 @@ func TestSyncSendsUnavailableOnErrorExit(t *testing.T) {
 		}
 	})
 
-	// The Connected event fires during Connect (before AfterConnect fails),
-	// so available is sent first. The defer then sends unavailable on the
-	// error exit — proving cleanup runs on all post-connect exits.
-	assertPresenceCalls(t, f, types.PresenceAvailable, types.PresenceUnavailable)
+	// The initial authenticated-connect presence and Connected event both send
+	// available in normal mode. The defer then sends unavailable on the error
+	// exit, proving cleanup runs on all post-connect exits.
+	assertPresenceCalls(t, f, types.PresenceAvailable, types.PresenceAvailable, types.PresenceUnavailable)
 }

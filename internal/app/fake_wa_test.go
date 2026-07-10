@@ -200,6 +200,9 @@ func (f *fakeWA) Connect(ctx context.Context, opts wa.ConnectOptions) error {
 			return ctx.Err()
 		}
 	}
+	if authed && !opts.SuppressInitialAvailablePresence {
+		_ = f.SendPresence(ctx, types.PresenceAvailable)
+	}
 	f.emit(&events.Connected{})
 	for _, e := range eventsToEmit {
 		f.emit(e)
@@ -222,8 +225,9 @@ func (f *fakeWA) RemoveEventHandler(id uint32) {
 	delete(f.handlers, id)
 }
 
-func (f *fakeWA) ReconnectWithBackoff(ctx context.Context, minDelay, maxDelay time.Duration) error {
-	return f.Connect(ctx, wa.ConnectOptions{AllowQR: false})
+func (f *fakeWA) ReconnectWithBackoff(ctx context.Context, minDelay, maxDelay time.Duration, opts wa.ConnectOptions) error {
+	opts.AllowQR = false
+	return f.Connect(ctx, opts)
 }
 
 func (f *fakeWA) ResolveChatName(ctx context.Context, chat types.JID, pushName string) string {

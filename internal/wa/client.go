@@ -110,6 +110,10 @@ type ConnectOptions struct {
 	OnQRCode        func(code string)
 	PairPhoneNumber string
 	OnPairCode      func(code string)
+	// SuppressInitialAvailablePresence skips the post-connect available
+	// presence update for callers that need a quiet linked-device session.
+	// The default false preserves normal WhatsApp linked-device behavior.
+	SuppressInitialAvailablePresence bool
 	// DetachSocket, when true, connects the websocket with a detached
 	// context so it is not closed when the caller's context is cancelled.
 	// This allows graceful shutdown to send a final PresenceUnavailable
@@ -186,6 +190,9 @@ func (c *Client) Connect(ctx context.Context, opts ConnectOptions) error {
 	}
 
 	if authed {
+		if opts.SuppressInitialAvailablePresence {
+			return nil
+		}
 		sendInitialAvailablePresence(ctx, cli)
 		return nil
 	}
@@ -968,13 +975,15 @@ func (c *Client) GetBusinessProfile(ctx context.Context, jid types.JID) (*types.
 }
 
 // Reconnect loop helper.
-func (c *Client) ReconnectWithBackoff(ctx context.Context, minDelay, maxDelay time.Duration) error {
+func (c *Client) ReconnectWithBackoff(ctx context.Context, minDelay, maxDelay time.Duration, opts ConnectOptions) error {
+	opts.AllowQR = false
+	opts.DetachSocket = true
 	delay := minDelay
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := c.Connect(ctx, ConnectOptions{AllowQR: false, DetachSocket: true}); err == nil {
+		if err := c.Connect(ctx, opts); err == nil {
 			return nil
 		}
 		select {
