@@ -25,9 +25,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: macos-14, goos: darwin, goarch: arm64 }
-          - { runner: macos-13, goos: darwin, goarch: amd64 }
-          - { runner: ubuntu-latest, goos: linux, goarch: amd64 }
+          # Both darwin arches build on Apple Silicon — macOS clang cross-compiles
+          # x86_64 via `-arch x86_64`, so we avoid the scarce Intel (macos-13) runner.
+          - { runner: macos-14, goos: darwin, goarch: arm64, cc: "" }
+          - { runner: macos-14, goos: darwin, goarch: amd64, cc: "clang -arch x86_64" }
+          - { runner: ubuntu-latest, goos: linux, goarch: amd64, cc: "" }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -41,10 +43,12 @@ jobs:
           CGO_ENABLED: "1"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
         run: |
           out="wacli-${GOOS}-${GOARCH}"
           go build -trimpath -o "$out" ./cmd/wacli
-          ./"$out" version || true
+          # only run the binary when it's for the host arch (arm64 runner)
+          if [ "${GOARCH}" = "arm64" ]; then ./"$out" version || true; fi
       - uses: actions/upload-artifact@v4
         with:
           name: wacli-${{ matrix.goos }}-${{ matrix.goarch }}
