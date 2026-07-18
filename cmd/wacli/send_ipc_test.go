@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openclaw/wacli/internal/fsutil"
-	"github.com/openclaw/wacli/internal/lock"
+	"github.com/powerset-co/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/lock"
 )
 
 func TestTryDelegateSendFallsBackWhenSocketUnavailable(t *testing.T) {

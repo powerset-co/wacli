@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/store"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"

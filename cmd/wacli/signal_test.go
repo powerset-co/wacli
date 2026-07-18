@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/out"
 )
 
 func TestSignalContextWithEventsKeepsStderrNDJSON(t *testing.T) {

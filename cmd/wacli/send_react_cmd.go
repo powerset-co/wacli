@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/out"
-	"github.com/openclaw/wacli/internal/store"
-	"github.com/openclaw/wacli/internal/wa"
+	"github.com/powerset-co/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/wa"
 	"github.com/spf13/cobra"
 	"go.mau.fi/whatsmeow/types"
 )

@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/openclaw/wacli/internal/fsutil"
-	"github.com/openclaw/wacli/internal/sqliteutil"
-	"github.com/openclaw/wacli/internal/store/storedb"
+	"github.com/powerset-co/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/sqliteutil"
+	"github.com/powerset-co/wacli/internal/store/storedb"
 )
 
 type DB struct {

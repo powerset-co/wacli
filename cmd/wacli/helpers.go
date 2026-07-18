@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/out"
 	"golang.org/x/term"
 )
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/lock"
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/lock"
+	"github.com/powerset-co/wacli/internal/store"
 )
 
 func TestParseLockOwnerPID(t *testing.T) {

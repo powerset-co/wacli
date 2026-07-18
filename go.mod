@@ -1,4 +1,4 @@
-module github.com/openclaw/wacli
+module github.com/powerset-co/wacli
 
 go 1.25.12
 

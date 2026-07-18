@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openclaw/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/fsutil"
 )
 
 func TestDefaultStoreDir(t *testing.T) {

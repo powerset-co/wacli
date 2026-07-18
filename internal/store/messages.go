@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/store/storedb"
+	"github.com/powerset-co/wacli/internal/store/storedb"
 )
 
 type UpsertMessageParams struct {

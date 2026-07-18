@@ -7,7 +7,7 @@ import (
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/openclaw/wacli/internal/sqliteutil"
+	"github.com/powerset-co/wacli/internal/sqliteutil"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 )

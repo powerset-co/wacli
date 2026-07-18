@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openclaw/wacli/internal/wa"
+	"github.com/powerset-co/wacli/internal/wa"
 )
 
 func (a *App) runSyncFollow(ctx context.Context, maxReconnect time.Duration, presenceMode SyncPresenceMode, messagesStored, connectionEpoch *atomic.Int64, disconnected <-chan struct{}, staleReconnect <-chan staleReconnectRequest) (SyncResult, error) {

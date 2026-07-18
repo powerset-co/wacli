@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/app"
-	"github.com/openclaw/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/app"
+	"github.com/powerset-co/wacli/internal/fsutil"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )

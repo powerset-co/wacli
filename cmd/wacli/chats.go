@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/app"
-	"github.com/openclaw/wacli/internal/out"
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/app"
+	"github.com/powerset-co/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/store"
 	"github.com/spf13/cobra"
 	"go.mau.fi/whatsmeow/types"
 )

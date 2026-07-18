@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openclaw/wacli/internal/sqliteutil"
+	"github.com/powerset-co/wacli/internal/sqliteutil"
 	"go.mau.fi/whatsmeow/types"
 )
 

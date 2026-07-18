@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/store"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"

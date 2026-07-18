@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/fsutil"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )

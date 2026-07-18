@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openclaw/wacli/internal/fsutil"
-	"github.com/openclaw/wacli/internal/wa"
+	"github.com/powerset-co/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/wa"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/proto/waCommon"

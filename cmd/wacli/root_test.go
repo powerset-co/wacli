@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openclaw/wacli/internal/config"
+	"github.com/powerset-co/wacli/internal/config"
 )
 
 func captureRootStderr(t *testing.T, fn func()) string {

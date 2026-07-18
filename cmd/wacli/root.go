@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/app"
-	"github.com/openclaw/wacli/internal/config"
-	"github.com/openclaw/wacli/internal/lock"
-	"github.com/openclaw/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/app"
+	"github.com/powerset-co/wacli/internal/config"
+	"github.com/powerset-co/wacli/internal/lock"
+	"github.com/powerset-co/wacli/internal/out"
 	"github.com/spf13/cobra"
 )
 

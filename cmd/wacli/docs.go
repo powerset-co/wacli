@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openclaw/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/out"
 	"github.com/spf13/cobra"
 )
 

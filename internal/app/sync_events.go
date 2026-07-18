@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openclaw/wacli/internal/store"
-	"github.com/openclaw/wacli/internal/wa"
+	"github.com/powerset-co/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/wa"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waHistorySync"

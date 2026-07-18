@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
@@ -28,6 +29,21 @@ func applyDeviceLabel() {
 	}
 	platform := parsePlatformType(platformRaw)
 	store.DeviceProps.PlatformType = platform.Enum()
+	// Request the full history backfill at pairing time. whatsmeow sends these
+	// DeviceProps only when linking, and unset (wacli's default) yields the
+	// browser/desktop-class ~recent window. RequireFullSync + a wide
+	// FullSyncDaysLimit is exactly what GOWS sets to pull multi-year history.
+	// Override the day cap via WACLI_DEVICE_FULL_SYNC_DAYS.
+	store.DeviceProps.RequireFullSync = proto.Bool(true)
+	fullSyncDays := uint32(3650)
+	if raw := strings.TrimSpace(os.Getenv("WACLI_DEVICE_FULL_SYNC_DAYS")); raw != "" {
+		if parsed, err := strconv.ParseUint(raw, 10, 32); err == nil && parsed > 0 {
+			fullSyncDays = uint32(parsed)
+		}
+	}
+	store.DeviceProps.HistorySyncConfig = &waCompanionReg.DeviceProps_HistorySyncConfig{
+		FullSyncDaysLimit: proto.Uint32(fullSyncDays),
+	}
 	if label == "" {
 		label = "wacli"
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/store/storedb"
+	"github.com/powerset-co/wacli/internal/store/storedb"
 )
 
 func (d *DB) UpsertGroup(jid, name, ownerJID string, created time.Time) error {

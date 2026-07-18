@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/fsutil"
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/store"
 )
 
 func TestContactsImportSystemFromInputDryRunDoesNotWrite(t *testing.T) {

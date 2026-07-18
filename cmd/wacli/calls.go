@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/wacli/internal/out"
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/store"
 	"github.com/spf13/cobra"
 )
 

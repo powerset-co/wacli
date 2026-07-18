@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/openclaw/wacli/internal/sqliteutil"
-	"github.com/openclaw/wacli/internal/wa"
+	"github.com/powerset-co/wacli/internal/sqliteutil"
+	"github.com/powerset-co/wacli/internal/wa"
 	"go.mau.fi/whatsmeow/types"
 )
 

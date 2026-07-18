@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openclaw/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/store"
 )
 
 func insertMediaMessage(t *testing.T, a *App, chat, id string, ts time.Time) {

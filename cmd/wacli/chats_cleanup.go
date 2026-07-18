@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openclaw/wacli/internal/app"
-	"github.com/openclaw/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/app"
+	"github.com/powerset-co/wacli/internal/out"
 	"github.com/spf13/cobra"
 )
 

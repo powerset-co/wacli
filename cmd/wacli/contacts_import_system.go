@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openclaw/wacli/internal/out"
-	"github.com/openclaw/wacli/internal/store"
-	"github.com/openclaw/wacli/internal/syscontacts"
+	"github.com/powerset-co/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/store"
+	"github.com/powerset-co/wacli/internal/syscontacts"
 	"github.com/spf13/cobra"
 )
 

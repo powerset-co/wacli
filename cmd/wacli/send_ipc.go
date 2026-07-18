@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openclaw/wacli/internal/app"
-	"github.com/openclaw/wacli/internal/lock"
-	"github.com/openclaw/wacli/internal/out"
-	"github.com/openclaw/wacli/internal/wa"
+	"github.com/powerset-co/wacli/internal/app"
+	"github.com/powerset-co/wacli/internal/lock"
+	"github.com/powerset-co/wacli/internal/out"
+	"github.com/powerset-co/wacli/internal/wa"
 	"go.mau.fi/whatsmeow/types"
 )
 

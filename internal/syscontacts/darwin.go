@@ -11,7 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/openclaw/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/fsutil"
 )
 
 //go:embed contacts_export.swift

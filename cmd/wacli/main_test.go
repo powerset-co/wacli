@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openclaw/wacli/internal/fsutil"
+	"github.com/powerset-co/wacli/internal/fsutil"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 )
 

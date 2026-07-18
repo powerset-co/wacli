@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openclaw/wacli/internal/store/storedb"
+	"github.com/powerset-co/wacli/internal/store/storedb"
 )
 
 func (d *DB) SearchContacts(query string, limit int) ([]Contact, error) {
