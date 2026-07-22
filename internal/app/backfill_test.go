@@ -72,6 +72,12 @@ func TestBackfillHistoryAddsOlderMessages(t *testing.T) {
 	if res.MessagesAdded <= 0 {
 		t.Fatalf("expected messages to be added, got %d", res.MessagesAdded)
 	}
+	if res.MessagesReceived != 1 || res.MessagesSynced != 1 {
+		t.Fatalf("received/synced = %d/%d, want 1/1", res.MessagesReceived, res.MessagesSynced)
+	}
+	if res.OtherMessagesAdded != 0 {
+		t.Fatalf("other added = %d, want 0", res.OtherMessagesAdded)
+	}
 
 	oldest, err := a.db.GetOldestMessageInfo(chatStr)
 	if err != nil {
@@ -82,6 +88,62 @@ func TestBackfillHistoryAddsOlderMessages(t *testing.T) {
 	}
 	if got := f.manualHistorySyncCalls; len(got) != 4 || !got[0] || !got[1] || got[2] || got[3] {
 		t.Fatalf("manual history sync calls = %v, want [true true false false]", got)
+	}
+}
+
+func TestBackfillHistoryPersistsAsyncResponseBeforeEvaluatingProgress(t *testing.T) {
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+
+	chat := types.JID{User: "123", Server: types.DefaultUserServer}
+	chatStr := chat.String()
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := a.db.UpsertChat(chatStr, "dm", "Async Contact", base); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+	if err := a.db.UpsertMessage(storeUpsertMessage(chatStr, "current", base.Add(2*time.Second), "current")); err != nil {
+		t.Fatalf("UpsertMessage: %v", err)
+	}
+
+	older := &waWeb.WebMessageInfo{
+		Key: &waCommon.MessageKey{
+			RemoteJID: proto.String(chatStr),
+			FromMe:    proto.Bool(false),
+			ID:        proto.String("older-async"),
+		},
+		MessageTimestamp: proto.Uint64(uint64(base.Unix())),
+		Message:          &waProto.Message{Conversation: proto.String("older")},
+	}
+	f.onDemandHistory = func(lastKnown types.MessageInfo, count int) *events.HistorySync {
+		return &events.HistorySync{Data: &waHistorySync.HistorySync{
+			SyncType: waHistorySync.HistorySync_ON_DEMAND.Enum(),
+			Conversations: []*waHistorySync.Conversation{{
+				ID:       proto.String(chatStr),
+				Messages: []*waHistorySync.HistorySyncMsg{{Message: older}},
+			}},
+		}}
+	}
+	f.onDemandAsync = true
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := a.BackfillHistory(ctx, BackfillOptions{
+		ChatJID:        chatStr,
+		Count:          50,
+		Requests:       1,
+		WaitPerRequest: time.Second,
+		IdleExit:       200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("BackfillHistory: %v", err)
+	}
+	if res.MessagesAdded != 1 || res.MessagesSynced != 1 {
+		t.Fatalf("added/synced = %d/%d, want 1/1", res.MessagesAdded, res.MessagesSynced)
+	}
+	oldest, err := a.db.GetOldestMessageInfo(chatStr)
+	if err != nil || oldest.MsgID != "older-async" {
+		t.Fatalf("oldest = %+v, err = %v, want older-async", oldest, err)
 	}
 }
 
@@ -153,8 +215,82 @@ func TestBackfillHistoryDownloadsManualOnDemandNotification(t *testing.T) {
 	if downloadCalls != 1 {
 		t.Fatalf("download calls = %d, want 1", downloadCalls)
 	}
+	if got := len(f.deleteHistoryCalls); got != 1 || f.deleteHistoryCalls[0] != notif {
+		t.Fatalf("delete history calls = %d, want one call for downloaded notification", got)
+	}
 	if res.MessagesAdded <= 0 {
 		t.Fatalf("expected messages to be added, got %d", res.MessagesAdded)
+	}
+}
+
+func TestBackfillHistoryCountsOnlyTargetChatMessages(t *testing.T) {
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+
+	target := types.JID{User: "123", Server: types.DefaultUserServer}
+	targetStr := target.String()
+	unrelated := types.JID{User: "456", Server: types.DefaultUserServer}
+	unrelatedStr := unrelated.String()
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	if err := a.db.UpsertChat(targetStr, "dm", "Target Contact", base); err != nil {
+		t.Fatalf("UpsertChat target: %v", err)
+	}
+	if err := a.db.UpsertMessage(storeUpsertMessage(targetStr, "target-current", base.Add(2*time.Second), "current")); err != nil {
+		t.Fatalf("UpsertMessage target: %v", err)
+	}
+
+	unrelatedMessage := &waWeb.WebMessageInfo{
+		Key: &waCommon.MessageKey{
+			RemoteJID: proto.String(unrelatedStr),
+			FromMe:    proto.Bool(false),
+			ID:        proto.String("unrelated-catchup"),
+		},
+		MessageTimestamp: proto.Uint64(uint64(base.Add(3 * time.Second).Unix())),
+		Message:          &waProto.Message{Conversation: proto.String("unrelated")},
+	}
+	f.connectEvents = []interface{}{&events.HistorySync{Data: &waHistorySync.HistorySync{
+		SyncType: waHistorySync.HistorySync_INITIAL_BOOTSTRAP.Enum(),
+		Conversations: []*waHistorySync.Conversation{{
+			ID:       proto.String(unrelatedStr),
+			Messages: []*waHistorySync.HistorySyncMsg{{Message: unrelatedMessage}},
+		}},
+	}}}
+	f.onDemandHistory = func(lastKnown types.MessageInfo, count int) *events.HistorySync {
+		return &events.HistorySync{Data: &waHistorySync.HistorySync{
+			SyncType: waHistorySync.HistorySync_ON_DEMAND.Enum(),
+			Conversations: []*waHistorySync.Conversation{{
+				ID:       proto.String(targetStr),
+				Messages: nil,
+			}},
+		}}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := a.BackfillHistory(ctx, BackfillOptions{
+		ChatJID:        targetStr,
+		Count:          50,
+		Requests:       1,
+		WaitPerRequest: time.Second,
+		IdleExit:       200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("BackfillHistory: %v", err)
+	}
+	if res.MessagesAdded != 0 {
+		t.Fatalf("MessagesAdded = %d, want 0 target-chat messages", res.MessagesAdded)
+	}
+	if res.MessagesReceived != 0 {
+		t.Fatalf("target received = %d, want 0", res.MessagesReceived)
+	}
+	if res.MessagesSynced != 1 || res.OtherMessagesAdded != 1 {
+		t.Fatalf("all synced/other added = %d/%d, want 1/1", res.MessagesSynced, res.OtherMessagesAdded)
+	}
+	if got, err := a.db.CountChatMessages(unrelatedStr); err != nil || got != 1 {
+		t.Fatalf("unrelated message count = %d, err = %v, want 1", got, err)
 	}
 }
 

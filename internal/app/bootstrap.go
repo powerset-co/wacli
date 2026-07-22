@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"time"
 
 	"github.com/powerset-co/wacli/internal/wa"
 )
@@ -44,9 +45,15 @@ func (a *App) refreshGroups(ctx context.Context) error {
 		}
 		joined[g.JID.String()] = true
 		_ = a.db.UpsertGroupWithHierarchy(g.JID.String(), g.GroupName.Name, g.OwnerJID.String(), g.GroupCreated, g.IsParent, g.LinkedParentJID.String())
-		_ = a.db.UpsertChat(g.JID.String(), "group", g.GroupName.Name, now)
+		// Group metadata refresh does not include a last-message timestamp. Keep
+		// chat activity derived from actual messages instead of manufacturing a
+		// fresh timestamp every time groups are refreshed.
+		_ = a.db.UpsertChat(g.JID.String(), "group", g.GroupName.Name, time.Time{})
 	}
-	return a.db.MarkGroupsMissingFrom(joined, now)
+	if err := a.db.MarkGroupsMissingFrom(joined, now); err != nil {
+		return err
+	}
+	return a.db.ReconcileChatLastMessageTSForKind("group")
 }
 
 func (a *App) refreshNewsletters(ctx context.Context) error {
@@ -57,7 +64,6 @@ func (a *App) refreshNewsletters(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	now := nowUTC()
 	for _, meta := range list {
 		if meta == nil {
 			continue
@@ -66,7 +72,8 @@ func (a *App) refreshNewsletters(ctx context.Context) error {
 		if name == "" {
 			name = meta.ID.String()
 		}
-		_ = a.db.UpsertChat(meta.ID.String(), "newsletter", name, now)
+		// Newsletter metadata refresh does not prove message activity either.
+		_ = a.db.UpsertChat(meta.ID.String(), "newsletter", name, time.Time{})
 	}
-	return nil
+	return a.db.ReconcileChatLastMessageTSForKind("newsletter")
 }

@@ -96,6 +96,9 @@ func (a *App) addSyncEventHandler(ctx context.Context, opts SyncOptions, message
 			a.handleLiveCallEvent(ctx, v)
 		case *events.HistorySync:
 			lastEvent.Store(nowUTC().UnixNano())
+			if opts.SkipOnDemandHistory && v.Data.GetSyncType() == waHistorySync.HistorySync_ON_DEMAND {
+				return
+			}
 			a.handleHistorySync(ctx, opts, v, messagesStored, lastEvent, enqueueMedia, limits)
 		case *events.Star:
 			lastEvent.Store(nowUTC().UnixNano())

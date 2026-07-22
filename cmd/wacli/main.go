@@ -41,9 +41,10 @@ func applyDeviceLabel() {
 			fullSyncDays = uint32(parsed)
 		}
 	}
-	store.DeviceProps.HistorySyncConfig = &waCompanionReg.DeviceProps_HistorySyncConfig{
-		FullSyncDaysLimit: proto.Uint32(fullSyncDays),
+	if store.DeviceProps.HistorySyncConfig == nil {
+		store.DeviceProps.HistorySyncConfig = &waCompanionReg.DeviceProps_HistorySyncConfig{}
 	}
+	store.DeviceProps.HistorySyncConfig.FullSyncDaysLimit = proto.Uint32(fullSyncDays)
 	if label == "" {
 		label = "wacli"
 	}

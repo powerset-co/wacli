@@ -8,6 +8,8 @@ import (
 
 	"github.com/powerset-co/wacli/internal/fsutil"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/store"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestParsePlatformType(t *testing.T) {
@@ -16,6 +18,29 @@ func TestParsePlatformType(t *testing.T) {
 	}
 	if got := parsePlatformType("bogus"); got != waCompanionReg.DeviceProps_CHROME {
 		t.Fatalf("bogus parsed as %v", got)
+	}
+}
+
+func TestApplyDeviceLabelPreservesHistoryCapabilities(t *testing.T) {
+	original := store.DeviceProps
+	store.DeviceProps = proto.Clone(original).(*waCompanionReg.DeviceProps)
+	defer func() { store.DeviceProps = original }()
+	t.Setenv("WACLI_DEVICE_FULL_SYNC_DAYS", "1095")
+
+	applyDeviceLabel()
+
+	config := store.DeviceProps.GetHistorySyncConfig()
+	if got := config.GetFullSyncDaysLimit(); got != 1095 {
+		t.Fatalf("FullSyncDaysLimit = %d, want 1095", got)
+	}
+	if !config.GetSupportGroupHistory() {
+		t.Fatal("SupportGroupHistory was disabled while widening the history window")
+	}
+	if !config.GetSupportMessageAssociation() {
+		t.Fatal("SupportMessageAssociation was disabled while widening the history window")
+	}
+	if !config.GetSupportHostedGroupMsg() {
+		t.Fatal("SupportHostedGroupMsg was disabled while widening the history window")
 	}
 }
 

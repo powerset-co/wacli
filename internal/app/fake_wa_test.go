@@ -58,6 +58,7 @@ type fakeWA struct {
 	decryptSecretFunc           func(evt *events.Message) (*waE2E.Message, error)
 	onDemandHistory             func(lastKnown types.MessageInfo, count int) *events.HistorySync
 	onDemandEvent               func(lastKnown types.MessageInfo, count int) interface{}
+	onDemandAsync               bool
 	downloadHistory             func(notif *waE2E.HistorySyncNotification) (*waHistorySync.HistorySync, error)
 	deleteHistoryCalls          []*waE2E.HistorySyncNotification
 	appStateRecoveryErr         error
@@ -685,11 +686,22 @@ func (f *fakeWA) RequestHistorySyncOnDemand(ctx context.Context, lastKnown types
 	f.mu.Lock()
 	eventCB := f.onDemandEvent
 	cb := f.onDemandHistory
+	async := f.onDemandAsync
 	f.mu.Unlock()
 	if eventCB != nil {
-		f.emit(eventCB(lastKnown, count))
+		evt := eventCB(lastKnown, count)
+		if async {
+			go f.emit(evt)
+		} else {
+			f.emit(evt)
+		}
 	} else if cb != nil {
-		f.emit(cb(lastKnown, count))
+		evt := cb(lastKnown, count)
+		if async {
+			go f.emit(evt)
+		} else {
+			f.emit(evt)
+		}
 	}
 	return types.MessageID("req"), nil
 }
