@@ -31,11 +31,13 @@ const (
 )
 
 type BackfillResult struct {
-	ChatJID        string
-	RequestsSent   int
-	ResponsesSeen  int
-	MessagesAdded  int64
-	MessagesSynced int64
+	ChatJID            string
+	RequestsSent       int
+	ResponsesSeen      int
+	MessagesReceived   int64
+	MessagesAdded      int64
+	MessagesSynced     int64
+	OtherMessagesAdded int64
 }
 
 type onDemandResponse struct {
@@ -69,7 +71,14 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 	a.wa.SetManualHistorySyncDownload(true)
 	defer a.wa.SetManualHistorySyncDownload(false)
 
-	beforeCount, _ := a.db.CountMessages()
+	beforeCount, err := a.db.CountChatMessages(chatStr)
+	if err != nil {
+		return BackfillResult{}, fmt.Errorf("count messages for %s before backfill: %w", chatStr, err)
+	}
+	beforeTotal, err := a.db.CountMessages()
+	if err != nil {
+		return BackfillResult{}, fmt.Errorf("count all messages before backfill: %w", err)
+	}
 
 	var mu sync.Mutex
 	var waitCh chan onDemandResponse
@@ -105,6 +114,10 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 	handlerID := a.wa.AddEventHandler(func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.HistorySync:
+			if v == nil || v.Data == nil || v.Data.GetSyncType() != waHistorySync.HistorySync_ON_DEMAND {
+				return
+			}
+			a.handleHistorySync(ctx, SyncOptions{}, v, &manualMessagesStored, &manualLastEvent, func(string, string) {})
 			handleOnDemand(v)
 		case *events.Message:
 			notif := historySyncNotificationFromMessage(v)
@@ -125,6 +138,13 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 			}
 			hs := &events.HistorySync{Data: data}
 			a.handleHistorySync(ctx, SyncOptions{}, hs, &manualMessagesStored, &manualLastEvent, func(string, string) {})
+			if err := a.wa.DeleteHistorySyncMedia(ctx, notif); err != nil {
+				a.emitWarning(
+					"history_delete_failed",
+					fmt.Sprintf("warning: failed to delete on-demand history sync media: %v", err),
+					map[string]any{"error": err.Error()},
+				)
+			}
 			handleOnDemand(hs)
 		}
 	})
@@ -132,11 +152,13 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 
 	var requestsSent int
 	var responsesSeen int
+	var messagesReceived int64
 
 	syncRes, err := a.Sync(ctx, SyncOptions{
-		Mode:     SyncModeOnce,
-		AllowQR:  false,
-		IdleExit: opts.IdleExit,
+		Mode:                SyncModeOnce,
+		AllowQR:             false,
+		IdleExit:            opts.IdleExit,
+		SkipOnDemandHistory: true,
 		AfterConnect: func(ctx context.Context) error {
 			for i := 0; i < opts.Requests; i++ {
 				oldest, err := a.db.GetOldestMessageInfo(chatStr)
@@ -177,6 +199,7 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 					return ctx.Err()
 				case resp = <-ch:
 					responsesSeen++
+					messagesReceived += int64(resp.messages)
 				case <-time.After(opts.WaitPerRequest):
 					return fmt.Errorf("timed out waiting for on-demand history sync response")
 				}
@@ -224,14 +247,28 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 		return BackfillResult{}, err
 	}
 
-	afterCount, _ := a.db.CountMessages()
+	afterCount, err := a.db.CountChatMessages(chatStr)
+	if err != nil {
+		return BackfillResult{}, fmt.Errorf("count messages for %s after backfill: %w", chatStr, err)
+	}
+	afterTotal, err := a.db.CountMessages()
+	if err != nil {
+		return BackfillResult{}, fmt.Errorf("count all messages after backfill: %w", err)
+	}
+	targetAdded := afterCount - beforeCount
+	otherAdded := (afterTotal - beforeTotal) - targetAdded
+	if otherAdded < 0 {
+		otherAdded = 0
+	}
 
 	return BackfillResult{
-		ChatJID:        chatStr,
-		RequestsSent:   requestsSent,
-		ResponsesSeen:  responsesSeen,
-		MessagesAdded:  afterCount - beforeCount,
-		MessagesSynced: syncRes.MessagesStored,
+		ChatJID:            chatStr,
+		RequestsSent:       requestsSent,
+		ResponsesSeen:      responsesSeen,
+		MessagesReceived:   messagesReceived,
+		MessagesAdded:      targetAdded,
+		MessagesSynced:     syncRes.MessagesStored + manualMessagesStored.Load(),
+		OtherMessagesAdded: otherAdded,
 	}, nil
 }
 

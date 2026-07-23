@@ -64,6 +64,7 @@ type SyncOptions struct {
 	PairPhoneNumber     string
 	OnPairCode          func(string)
 	AfterConnect        func(context.Context) error
+	SkipOnDemandHistory bool // caller handles on-demand history events itself
 	DownloadMedia       bool
 	RefreshContacts     bool
 	RefreshGroups       bool

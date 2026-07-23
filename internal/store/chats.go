@@ -30,6 +30,21 @@ func (d *DB) UpsertChat(jid, kind, name string, lastTS time.Time) error {
 	})
 }
 
+// ReconcileChatLastMessageTSForKind makes chat activity reflect messages
+// actually present in the local store. Metadata-only refreshes do not carry a
+// reliable last-message timestamp and must not make an old chat appear newly
+// active, including chats no longer returned by the remote metadata listing.
+func (d *DB) ReconcileChatLastMessageTSForKind(kind string) error {
+	_, err := d.sql.Exec(`
+		UPDATE chats
+		SET last_message_ts = (
+			SELECT MAX(ts) FROM messages WHERE chat_jid = chats.jid
+		)
+		WHERE kind = ?
+	`, kind)
+	return err
+}
+
 func (d *DB) ListChats(query string, limit int) ([]Chat, error) {
 	return d.ListChatsFiltered(ChatListFilter{Query: query, Limit: limit})
 }

@@ -68,6 +68,35 @@ func TestRefreshGroupsStoresGroupsAndChats(t *testing.T) {
 	if c.Kind != "group" {
 		t.Fatalf("expected chat kind group, got %q", c.Kind)
 	}
+	if !c.LastMessageTS.IsZero() {
+		t.Fatalf("group metadata refresh invented last message timestamp %s", c.LastMessageTS)
+	}
+}
+
+func TestRefreshGroupsRepairsInflatedLastMessageTimestamp(t *testing.T) {
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+
+	jid := types.JID{User: "120363099", Server: types.GroupServer}
+	actual := time.Date(2023, 3, 4, 5, 6, 7, 0, time.UTC)
+	inflated := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	if err := a.db.UpsertChat(jid.String(), "group", "Existing Group", inflated); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+	if err := a.db.UpsertMessage(storeUpsertMessage(jid.String(), "actual-message", actual, "stored")); err != nil {
+		t.Fatalf("UpsertMessage: %v", err)
+	}
+	if err := a.refreshGroups(context.Background()); err != nil {
+		t.Fatalf("refreshGroups: %v", err)
+	}
+	c, err := a.db.GetChat(jid.String())
+	if err != nil {
+		t.Fatalf("GetChat: %v", err)
+	}
+	if !c.LastMessageTS.Equal(actual) {
+		t.Fatalf("last message timestamp = %s, want stored message time %s", c.LastMessageTS, actual)
+	}
 }
 
 func TestRefreshNewslettersStoresChats(t *testing.T) {
@@ -89,6 +118,9 @@ func TestRefreshNewslettersStoresChats(t *testing.T) {
 	c, err := a.db.GetChat(jid.String())
 	if err != nil {
 		t.Fatalf("GetChat: %v", err)
+	}
+	if !c.LastMessageTS.IsZero() {
+		t.Fatalf("newsletter metadata refresh invented last message timestamp %s", c.LastMessageTS)
 	}
 	if c.Kind != "newsletter" || c.Name != "Launch Notes" {
 		t.Fatalf("expected newsletter chat, got %+v", c)
