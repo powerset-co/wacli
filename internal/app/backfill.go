@@ -20,6 +20,7 @@ type BackfillOptions struct {
 	Count          int
 	Requests       int
 	WaitPerRequest time.Duration
+	RequestDelay   time.Duration
 	IdleExit       time.Duration
 }
 
@@ -161,6 +162,23 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 		SkipOnDemandHistory: true,
 		AfterConnect: func(ctx context.Context) error {
 			for i := 0; i < opts.Requests; i++ {
+				if i > 0 && opts.RequestDelay > 0 {
+					a.emitOrPrint("backfill_throttled", map[string]any{
+						"chat_jid": chatStr,
+						"delay":    opts.RequestDelay.String(),
+						"request":  i + 1,
+					}, "Waiting %s before the next history request...\n", opts.RequestDelay)
+					timer := time.NewTimer(opts.RequestDelay)
+					select {
+					case <-ctx.Done():
+						if !timer.Stop() {
+							<-timer.C
+						}
+						return ctx.Err()
+					case <-timer.C:
+					}
+				}
+
 				oldest, err := a.db.GetOldestMessageInfo(chatStr)
 				if err != nil {
 					if err == sql.ErrNoRows {
@@ -183,15 +201,15 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 				waitCh = ch
 				mu.Unlock()
 
+				if _, err := a.wa.RequestHistorySyncOnDemand(ctx, reqInfo, opts.Count); err != nil {
+					return err
+				}
 				requestsSent++
 				a.emitOrPrint("backfill_requesting", map[string]any{
 					"chat_jid": chatStr,
 					"count":    opts.Count,
 					"request":  requestsSent,
 				}, "Requesting %d older messages for %s...\n", opts.Count, chatStr)
-				if _, err := a.wa.RequestHistorySyncOnDemand(ctx, reqInfo, opts.Count); err != nil {
-					return err
-				}
 
 				var resp onDemandResponse
 				select {
