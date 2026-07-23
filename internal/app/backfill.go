@@ -201,15 +201,15 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 				waitCh = ch
 				mu.Unlock()
 
+				if _, err := a.wa.RequestHistorySyncOnDemand(ctx, reqInfo, opts.Count); err != nil {
+					return err
+				}
 				requestsSent++
 				a.emitOrPrint("backfill_requesting", map[string]any{
 					"chat_jid": chatStr,
 					"count":    opts.Count,
 					"request":  requestsSent,
 				}, "Requesting %d older messages for %s...\n", opts.Count, chatStr)
-				if _, err := a.wa.RequestHistorySyncOnDemand(ctx, reqInfo, opts.Count); err != nil {
-					return err
-				}
 
 				var resp onDemandResponse
 				select {
