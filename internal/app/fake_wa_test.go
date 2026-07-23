@@ -59,6 +59,7 @@ type fakeWA struct {
 	onDemandHistory             func(lastKnown types.MessageInfo, count int) *events.HistorySync
 	onDemandEvent               func(lastKnown types.MessageInfo, count int) interface{}
 	onDemandAsync               bool
+	onDemandRequestTimes        []time.Time
 	downloadHistory             func(notif *waE2E.HistorySyncNotification) (*waHistorySync.HistorySync, error)
 	deleteHistoryCalls          []*waE2E.HistorySyncNotification
 	appStateRecoveryErr         error
@@ -687,6 +688,7 @@ func (f *fakeWA) RequestHistorySyncOnDemand(ctx context.Context, lastKnown types
 	eventCB := f.onDemandEvent
 	cb := f.onDemandHistory
 	async := f.onDemandAsync
+	f.onDemandRequestTimes = append(f.onDemandRequestTimes, time.Now())
 	f.mu.Unlock()
 	if eventCB != nil {
 		evt := eventCB(lastKnown, count)

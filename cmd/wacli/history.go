@@ -130,6 +130,7 @@ func newHistoryBackfillCmd(flags *rootFlags) *cobra.Command {
 	var count int
 	var requests int
 	var wait time.Duration
+	var requestDelay time.Duration
 	var idleExit time.Duration
 
 	cmd := &cobra.Command{
@@ -157,6 +158,7 @@ func newHistoryBackfillCmd(flags *rootFlags) *cobra.Command {
 				Count:          count,
 				Requests:       requests,
 				WaitPerRequest: wait,
+				RequestDelay:   requestDelay,
 				IdleExit:       idleExit,
 			})
 			if err != nil {
@@ -191,6 +193,7 @@ func newHistoryBackfillCmd(flags *rootFlags) *cobra.Command {
 	cmd.Flags().IntVar(&count, "count", app.DefaultBackfillCount, "number of messages to request per on-demand sync")
 	cmd.Flags().IntVar(&requests, "requests", app.DefaultBackfillRequests, "number of on-demand requests to attempt")
 	cmd.Flags().DurationVar(&wait, "wait", 60*time.Second, "time to wait for an on-demand response per request")
+	cmd.Flags().DurationVar(&requestDelay, "request-delay", 0, "pause between on-demand history requests")
 	cmd.Flags().DurationVar(&idleExit, "idle-exit", 5*time.Second, "exit after being idle (after backfill requests)")
 	return cmd
 }

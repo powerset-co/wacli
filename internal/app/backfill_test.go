@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -291,6 +292,74 @@ func TestBackfillHistoryCountsOnlyTargetChatMessages(t *testing.T) {
 	}
 	if got, err := a.db.CountChatMessages(unrelatedStr); err != nil || got != 1 {
 		t.Fatalf("unrelated message count = %d, err = %v, want 1", got, err)
+	}
+}
+
+func TestBackfillHistoryDelaysBetweenRequests(t *testing.T) {
+	a := newTestApp(t)
+	f := newFakeWA()
+	a.wa = f
+
+	chat := types.JID{User: "123", Server: types.DefaultUserServer}
+	chatStr := chat.String()
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := a.db.UpsertChat(chatStr, "dm", "Test Contact", base); err != nil {
+		t.Fatalf("UpsertChat: %v", err)
+	}
+	if err := a.db.UpsertMessage(storeUpsertMessage(chatStr, "m3", base.Add(3*time.Second), "current")); err != nil {
+		t.Fatalf("UpsertMessage: %v", err)
+	}
+
+	call := 0
+	f.onDemandHistory = func(lastKnown types.MessageInfo, count int) *events.HistorySync {
+		call++
+		id := fmt.Sprintf("m%d", 3-call)
+		ts := base.Add(time.Duration(3-call) * time.Second)
+		message := &waWeb.WebMessageInfo{
+			Key: &waCommon.MessageKey{
+				RemoteJID: proto.String(chatStr),
+				FromMe:    proto.Bool(false),
+				ID:        proto.String(id),
+			},
+			MessageTimestamp: proto.Uint64(uint64(ts.Unix())),
+			Message:          &waProto.Message{Conversation: proto.String("older")},
+		}
+		endType := waHistorySync.Conversation_COMPLETE_BUT_MORE_MESSAGES_REMAIN_ON_PRIMARY
+		if call == 2 {
+			endType = waHistorySync.Conversation_COMPLETE_AND_NO_MORE_MESSAGE_REMAIN_ON_PRIMARY
+		}
+		return &events.HistorySync{Data: &waHistorySync.HistorySync{
+			SyncType: waHistorySync.HistorySync_ON_DEMAND.Enum(),
+			Conversations: []*waHistorySync.Conversation{{
+				ID:                       proto.String(chatStr),
+				EndOfHistoryTransferType: endType.Enum(),
+				Messages:                 []*waHistorySync.HistorySyncMsg{{Message: message}},
+			}},
+		}}
+	}
+
+	delay := 30 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := a.BackfillHistory(ctx, BackfillOptions{
+		ChatJID:        chatStr,
+		Count:          50,
+		Requests:       2,
+		WaitPerRequest: time.Second,
+		RequestDelay:   delay,
+		IdleExit:       200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("BackfillHistory: %v", err)
+	}
+	if res.RequestsSent != 2 {
+		t.Fatalf("requests sent = %d, want 2", res.RequestsSent)
+	}
+	if got := len(f.onDemandRequestTimes); got != 2 {
+		t.Fatalf("request times = %d, want 2", got)
+	}
+	if elapsed := f.onDemandRequestTimes[1].Sub(f.onDemandRequestTimes[0]); elapsed < delay {
+		t.Fatalf("request spacing = %s, want at least %s", elapsed, delay)
 	}
 }
 
