@@ -45,6 +45,7 @@ type onDemandResponse struct {
 	conversations int
 	messages      int
 	endType       waHistorySync.Conversation_EndOfHistoryTransferType
+	hasEndType    bool
 }
 
 func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (BackfillResult, error) {
@@ -104,6 +105,7 @@ func (a *App) BackfillHistory(ctx context.Context, opts BackfillOptions) (Backfi
 				conversations: len(hs.Data.GetConversations()),
 				messages:      len(conv.GetMessages()),
 				endType:       conv.GetEndOfHistoryTransferType(),
+				hasEndType:    conv.EndOfHistoryTransferType != nil,
 			}
 			select {
 			case ch <- resp:

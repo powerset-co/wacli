@@ -34,6 +34,29 @@ var schemaMigrations = []migration{
 	{version: 18, name: "chat unread count column", up: migrateChatUnreadCountColumn},
 	{version: 19, name: "messages quoted columns", up: migrateMessagesQuotedColumns},
 	{version: 20, name: "messages media_unavailable_at column", up: migrateMessagesMediaUnavailableColumn},
+	{version: 21, name: "chat history request identity column", up: migrateChatHistoryRequestIdentityColumn},
+}
+
+func migrateChatHistoryRequestIdentityColumn(d *DB) error {
+	hasTable, err := d.tableExists("chats")
+	if err != nil {
+		return err
+	}
+	if !hasTable {
+		return nil
+	}
+	has, err := d.tableHasColumn("chats", "history_request_identity")
+	if err != nil {
+		return err
+	}
+	if !has {
+		if _, err := d.sql.Exec(
+			`ALTER TABLE chats ADD COLUMN history_request_identity TEXT NOT NULL DEFAULT ''`,
+		); err != nil {
+			return fmt.Errorf("add chats.history_request_identity column: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateMessagesMediaUnavailableColumn(d *DB) error {
@@ -129,6 +152,9 @@ func (d *DB) ensureCurrentSchema() error {
 	}
 	if err := migrateMessagesMediaUnavailableColumn(d); err != nil {
 		return fmt.Errorf("ensure current messages media unavailable column: %w", err)
+	}
+	if err := migrateChatHistoryRequestIdentityColumn(d); err != nil {
+		return fmt.Errorf("ensure current chat history request identity column: %w", err)
 	}
 	return nil
 }

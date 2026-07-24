@@ -30,6 +30,7 @@ jobs:
           - { runner: macos-14, goos: darwin, goarch: arm64, cc: "" }
           - { runner: macos-14, goos: darwin, goarch: amd64, cc: "clang -arch x86_64" }
           - { runner: ubuntu-latest, goos: linux, goarch: amd64, cc: "" }
+          - { runner: ubuntu-latest, goos: linux, goarch: arm64, cc: "aarch64-linux-gnu-gcc" }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +39,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install Linux ARM64 cross compiler
+        if: matrix.goos == 'linux' && matrix.goarch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
       - name: Build (native CGo)
         env:
           CGO_ENABLED: "1"
@@ -47,8 +51,8 @@ jobs:
         run: |
           out="wacli-${GOOS}-${GOARCH}"
           go build -trimpath -o "$out" ./cmd/wacli
-          # only run the binary when it's for the host arch (arm64 runner)
-          if [ "${GOARCH}" = "arm64" ]; then ./"$out" version || true; fi
+          # Only the darwin/arm64 target matches its Apple Silicon host.
+          if [ "${GOOS}" = "darwin" ] && [ "${GOARCH}" = "arm64" ]; then ./"$out" version; fi
       - uses: actions/upload-artifact@v4
         with:
           name: wacli-${{ matrix.goos }}-${{ matrix.goarch }}

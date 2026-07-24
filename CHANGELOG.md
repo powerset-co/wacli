@@ -2,6 +2,13 @@
 
 ## 0.13.1 - Unreleased
 
+### Added
+
+- History: add `history backfill-batch` to deepen multiple chats over one
+  connection with bounded concurrency, pacing, PN-to-LID fallback, correlated
+  responses, and a private per-chat cache of the last successful request
+  identity.
+
 ## 0.13.0 - 2026-07-17
 
 ### Highlights

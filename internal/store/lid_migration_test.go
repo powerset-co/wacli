@@ -81,6 +81,9 @@ func TestMigrateLIDToPNMergesChatsAndMessages(t *testing.T) {
 	if err := db.UpsertChat(lid, "unknown", lid, base.Add(10*time.Second)); err != nil {
 		t.Fatalf("UpsertChat lid: %v", err)
 	}
+	if err := db.SetHistoryRequestIdentity(lid, HistoryRequestIdentityLID); err != nil {
+		t.Fatalf("SetHistoryRequestIdentity lid: %v", err)
+	}
 	if err := db.SetChatUnreadCount(pn, 2); err != nil {
 		t.Fatalf("SetChatUnreadCount pn: %v", err)
 	}
@@ -229,6 +232,13 @@ func TestMigrateLIDToPNMergesChatsAndMessages(t *testing.T) {
 	}
 	if !chat.Unread || chat.UnreadCount != 5 {
 		t.Fatalf("merged chat unread state = %+v, want unread count 5", chat)
+	}
+	preferredIdentity, err := db.GetHistoryRequestIdentity(pn)
+	if err != nil {
+		t.Fatalf("GetHistoryRequestIdentity pn: %v", err)
+	}
+	if preferredIdentity != HistoryRequestIdentityLID {
+		t.Fatalf("merged history request identity = %q, want lid", preferredIdentity)
 	}
 
 	dupe, err := db.GetMessage(pn, "dupe")

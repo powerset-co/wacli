@@ -21,6 +21,7 @@ func newHistoryCmd(flags *rootFlags) *cobra.Command {
 	cmd.AddCommand(newHistoryCoverageCmd(flags))
 	cmd.AddCommand(newHistoryFillCmd(flags))
 	cmd.AddCommand(newHistoryBackfillCmd(flags))
+	cmd.AddCommand(newHistoryBackfillBatchCmd(flags))
 	return cmd
 }
 
@@ -195,6 +196,147 @@ func newHistoryBackfillCmd(flags *rootFlags) *cobra.Command {
 	cmd.Flags().DurationVar(&wait, "wait", 60*time.Second, "time to wait for an on-demand response per request")
 	cmd.Flags().DurationVar(&requestDelay, "request-delay", 0, "pause between on-demand history requests")
 	cmd.Flags().DurationVar(&idleExit, "idle-exit", 5*time.Second, "exit after being idle (after backfill requests)")
+	return cmd
+}
+
+func newHistoryBackfillBatchCmd(flags *rootFlags) *cobra.Command {
+	var chats []string
+	var count int
+	var batchSize int
+	var maxInFlight int
+	var lidFallback bool
+	var requests int
+	var requestDelay time.Duration
+	var wait time.Duration
+	var batchDelay time.Duration
+	var timeoutBackoff time.Duration
+	var idleExit time.Duration
+
+	cmd := &cobra.Command{
+		Use:   "backfill-batch",
+		Short: "Request older messages for multiple chats over one connection",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(chats) == 0 {
+				return fmt.Errorf("at least one --chat is required")
+			}
+			if err := flags.requireWritable(); err != nil {
+				return err
+			}
+
+			ctx, stop := signalContextWithEvents(out.NewEventWriter(os.Stderr, flags.events))
+			defer stop()
+
+			a, lk, err := newApp(ctx, flags, true, false)
+			if err != nil {
+				return err
+			}
+			defer closeApp(a, lk)
+
+			res, err := a.BackfillHistoryBatch(ctx, app.BackfillBatchOptions{
+				ChatJIDs:       chats,
+				Count:          count,
+				BatchSize:      batchSize,
+				MaxInFlight:    maxInFlight,
+				LIDFallback:    lidFallback,
+				Requests:       requests,
+				RequestDelay:   requestDelay,
+				WaitPerBatch:   wait,
+				BatchDelay:     batchDelay,
+				TimeoutBackoff: timeoutBackoff,
+				IdleExit:       idleExit,
+			})
+			if err != nil {
+				return err
+			}
+
+			chatResults := make([]map[string]any, 0, len(res.Chats))
+			responded := 0
+			timedOut := 0
+			failed := 0
+			for _, chat := range res.Chats {
+				switch {
+				case chat.Error == "" && chat.ResponsesSeen > 0:
+					responded++
+				case strings.Contains(strings.ToLower(chat.Error), "timed out"):
+					timedOut++
+				default:
+					failed++
+				}
+				chatResults = append(chatResults, map[string]any{
+					"chat":              chat.ChatJID,
+					"requests_sent":     chat.RequestsSent,
+					"responses_seen":    chat.ResponsesSeen,
+					"messages_received": chat.MessagesReceived,
+					"messages_added":    chat.MessagesAdded,
+					"request_identity":  chat.RequestIdentity,
+					"end_type":          chat.EndType,
+					"elapsed_ms":        chat.Elapsed.Milliseconds(),
+					"error":             chat.Error,
+				})
+			}
+			if flags.asJSON {
+				status := "completed"
+				if responded != len(res.Chats) {
+					status = "partial"
+				}
+				return out.WriteJSON(os.Stdout, map[string]any{
+					"status": status,
+					"chats":  chatResults,
+					"counts": map[string]any{
+						"total":     len(res.Chats),
+						"responded": responded,
+						"timed_out": timedOut,
+						"failed":    failed,
+					},
+					"messages_synced":      res.MessagesSynced,
+					"other_messages_added": res.OtherMessagesAdded,
+					"elapsed_ms":           res.Elapsed.Milliseconds(),
+				})
+			}
+
+			fmt.Fprintf(
+				os.Stdout,
+				"Batch backfill finished for %d chats in %s: %d responded, %d timed out, %d failed; %d other messages arrived while connected.\n",
+				len(res.Chats),
+				res.Elapsed.Round(time.Millisecond),
+				responded,
+				timedOut,
+				failed,
+				res.OtherMessagesAdded,
+			)
+			for _, chat := range res.Chats {
+				status := "ok"
+				if chat.Error != "" {
+					status = chat.Error
+				}
+				fmt.Fprintf(
+					os.Stdout,
+					"%s: requests=%d responses=%d received=%d added=%d identity=%s elapsed=%s status=%s\n",
+					chat.ChatJID,
+					chat.RequestsSent,
+					chat.ResponsesSeen,
+					chat.MessagesReceived,
+					chat.MessagesAdded,
+					chat.RequestIdentity,
+					chat.Elapsed.Round(time.Millisecond),
+					status,
+				)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringSliceVar(&chats, "chat", nil, "chat JID to backfill (repeatable)")
+	cmd.Flags().IntVar(&count, "count", app.DefaultBackfillCount, "number of messages to request per on-demand sync")
+	cmd.Flags().IntVar(&batchSize, "batch-size", app.DefaultBackfillBatchSize, "number of chats to process before a batch delay")
+	cmd.Flags().IntVar(&maxInFlight, "max-inflight", 10, "maximum simultaneous outstanding history requests")
+	cmd.Flags().BoolVar(&lidFallback, "lid-fallback", true, "try the alternate mapped PN/LID identity after a timeout or empty first response")
+	cmd.Flags().IntVar(&requests, "requests", 10, "maximum accepted history requests per chat")
+	cmd.Flags().DurationVar(&requestDelay, "request-delay", 10*time.Second, "pause before requesting another chunk for chats that grew")
+	cmd.Flags().DurationVar(&wait, "wait", 10*time.Second, "response window per in-flight request wave")
+	cmd.Flags().DurationVar(&batchDelay, "batch-delay", 10*time.Second, "pause between batches")
+	cmd.Flags().DurationVar(&timeoutBackoff, "timeout-backoff", time.Minute, "pause after a batch receives no protocol responses")
+	cmd.Flags().DurationVar(&idleExit, "idle-exit", 5*time.Second, "exit after being idle after all batches")
 	return cmd
 }
 

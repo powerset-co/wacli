@@ -126,16 +126,19 @@ Default store: `~/.local/state/wacli` on Linux, `~/.wacli` elsewhere. Existing `
 wacli history coverage --include-blocked
 wacli history fill --dry-run --kind group --limit 20
 wacli history backfill --chat 1234567890@s.whatsapp.net --requests 10 --count 50
+wacli history backfill-batch --chat 1234567890@s.whatsapp.net --chat 15551234567@s.whatsapp.net
 ```
 
-Loop over every known chat:
+For large sets, repeat `--chat`; batch mode keeps one connection open, applies
+bounded concurrency and pacing, falls back between PN and LID identities for
+DMs, and privately remembers which identity worked for the next run. A fully
+silent batch triggers a longer one-minute cooldown before the next batch.
 
 ```bash
-wacli --json chats list --limit 100000 \
-  | jq -r '.data[].JID' \
-  | while read -r jid; do
-      wacli history backfill --chat "$jid" --requests 3 --count 50
-    done
+wacli history backfill-batch \
+  --chat 1234567890@s.whatsapp.net \
+  --chat 15551234567@s.whatsapp.net \
+  --requests 3 --count 50
 ```
 
 ## Credits
