@@ -96,14 +96,21 @@ func (d *DB) MigrateLIDToPN(lidJID, pnJID string) error {
 
 func migrateLIDChatToPN(tx *sql.Tx, lidJID, pnJID string) error {
 	if _, err := tx.Exec(`
-		INSERT INTO chats(jid, kind, name, last_message_ts, unread, unread_count)
+		INSERT INTO chats(
+			jid, kind, name, last_message_ts, unread, unread_count,
+			history_request_identity
+		)
 		SELECT
 			?,
 			CASE WHEN kind = '' OR kind = 'unknown' THEN 'dm' ELSE kind END,
 			name,
 			last_message_ts,
 			CASE WHEN COALESCE(unread, 0) != 0 THEN 1 ELSE 0 END,
-			COALESCE(unread_count, 0)
+			COALESCE(unread_count, 0),
+			CASE
+				WHEN history_request_identity IN ('pn', 'lid') THEN history_request_identity
+				ELSE ''
+			END
 		FROM chats
 		WHERE jid = ?
 		ON CONFLICT(jid) DO UPDATE SET
@@ -125,7 +132,12 @@ func migrateLIDChatToPN(tx *sql.Tx, lidJID, pnJID string) error {
 			END,
 			last_message_ts = max(COALESCE(chats.last_message_ts, 0), COALESCE(excluded.last_message_ts, 0)),
 			unread = CASE WHEN COALESCE(chats.unread, 0) != 0 OR COALESCE(excluded.unread, 0) != 0 THEN 1 ELSE 0 END,
-			unread_count = COALESCE(chats.unread_count, 0) + COALESCE(excluded.unread_count, 0)
+			unread_count = COALESCE(chats.unread_count, 0) + COALESCE(excluded.unread_count, 0),
+			history_request_identity = CASE
+				WHEN chats.history_request_identity IN ('pn', 'lid') THEN chats.history_request_identity
+				WHEN excluded.history_request_identity IN ('pn', 'lid') THEN excluded.history_request_identity
+				ELSE ''
+			END
 	`, pnJID, lidJID); err != nil {
 		return fmt.Errorf("merge lid chat into pn chat: %w", err)
 	}

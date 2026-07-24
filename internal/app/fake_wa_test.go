@@ -61,6 +61,7 @@ type fakeWA struct {
 	onDemandAsync               bool
 	onDemandErr                 error
 	onDemandRequestTimes        []time.Time
+	onDemandRequestSequence     int
 	downloadHistory             func(notif *waE2E.HistorySyncNotification) (*waHistorySync.HistorySync, error)
 	deleteHistoryCalls          []*waE2E.HistorySyncNotification
 	appStateRecoveryErr         error
@@ -690,6 +691,8 @@ func (f *fakeWA) RequestHistorySyncOnDemand(ctx context.Context, lastKnown types
 	cb := f.onDemandHistory
 	async := f.onDemandAsync
 	requestErr := f.onDemandErr
+	f.onDemandRequestSequence++
+	requestID := types.MessageID(fmt.Sprintf("req-%d", f.onDemandRequestSequence))
 	f.onDemandRequestTimes = append(f.onDemandRequestTimes, time.Now())
 	f.mu.Unlock()
 	if requestErr != nil {
@@ -697,6 +700,13 @@ func (f *fakeWA) RequestHistorySyncOnDemand(ctx context.Context, lastKnown types
 	}
 	if eventCB != nil {
 		evt := eventCB(lastKnown, count)
+		if msg, ok := evt.(*events.Message); ok {
+			if notif := historySyncNotificationFromMessage(msg); notif != nil &&
+				notif.OriginalMessageID == nil {
+				originalID := string(requestID)
+				notif.OriginalMessageID = &originalID
+			}
+		}
 		if async {
 			go f.emit(evt)
 		} else {
@@ -710,7 +720,7 @@ func (f *fakeWA) RequestHistorySyncOnDemand(ctx context.Context, lastKnown types
 			f.emit(evt)
 		}
 	}
-	return types.MessageID("req"), nil
+	return requestID, nil
 }
 
 func (f *fakeWA) RequestAppStateRecovery(ctx context.Context, name string) (types.MessageID, error) {
