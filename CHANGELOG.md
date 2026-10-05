@@ -4,6 +4,9 @@
 
 ### Added
 
+- Auth: `auth --link-only` pairs the device and exits at its first login,
+  before any history is read; WhatsApp holds the history for the next `sync`.
+
 - History: add `history backfill-batch` to deepen multiple chats over one
   connection with bounded concurrency, pacing, PN-to-LID fallback, correlated
   responses, and a private per-chat cache of the last successful request

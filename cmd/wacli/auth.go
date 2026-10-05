@@ -22,6 +22,7 @@ type authOptions struct {
 	downloadMedia bool
 	qrFormat      string
 	phone         string
+	linkOnly      bool
 }
 
 type validatedAuthOptions struct {
@@ -67,6 +68,7 @@ func addAuthFlags(cmd *cobra.Command, opts *authOptions) {
 	cmd.Flags().BoolVar(&opts.downloadMedia, "download-media", false, "download media in the background during sync")
 	cmd.Flags().StringVar(&opts.qrFormat, "qr-format", "terminal", "QR output format: terminal or text")
 	cmd.Flags().StringVar(&opts.phone, "phone", "", "pair by phone number instead of QR code")
+	cmd.Flags().BoolVar(&opts.linkOnly, "link-only", false, "pair this device and exit; history arrives on the next sync")
 }
 
 func runAuth(flags *rootFlags, opts authOptions) (appPkg.SyncResult, error) {
@@ -99,6 +101,14 @@ func runAuth(flags *rootFlags, opts authOptions) (appPkg.SyncResult, error) {
 		_ = a.Events().Emit("auth_starting", nil)
 	} else {
 		fmt.Fprintln(os.Stderr, "Starting authentication…")
+	}
+	if opts.linkOnly {
+		return appPkg.SyncResult{}, a.Link(ctx, appPkg.SyncOptions{
+			AllowQR:         true,
+			OnQRCode:        authQRWriter(validated.qrFormat, os.Stdout, os.Stderr, a.Events()),
+			PairPhoneNumber: validated.pairPhone,
+			OnPairCode:      authPairCodeWriter(validated.pairPhone, os.Stderr, a.Events()),
+		})
 	}
 	return a.Sync(ctx, appPkg.SyncOptions{
 		Mode:            mode,
