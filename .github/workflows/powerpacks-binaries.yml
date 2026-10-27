@@ -50,7 +50,9 @@ jobs:
           CC: ${{ matrix.cc }}
         run: |
           out="wacli-${GOOS}-${GOARCH}"
-          go build -trimpath -o "$out" ./cmd/wacli
+          # sqlite_fts5: the same tag the upstream goreleaser builds with. Without it the sync's
+          # LID migration fails with "no such module: fts5" (powerpacks run of 2026-10-27).
+          go build -trimpath -tags sqlite_fts5 -o "$out" ./cmd/wacli
           # Only the darwin/arm64 target matches its Apple Silicon host.
           if [ "${GOOS}" = "darwin" ] && [ "${GOARCH}" = "arm64" ]; then ./"$out" version; fi
       - uses: actions/upload-artifact@v4
